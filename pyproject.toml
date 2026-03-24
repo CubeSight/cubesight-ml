@@ -28,6 +28,7 @@ target-version = "py312"
 select = ["ALL"]
 
 ignore = [
+    "D1",      # missing docstrings
     "D203",    # one-blank-line-before-class (Conflicts with D211)
     "D213",    # multi-line-summary-second-line (Conflicts with D212)
     "COM812",  # missing-trailing-comma (Conflicts with the formatter)
