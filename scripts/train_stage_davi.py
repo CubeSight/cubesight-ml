@@ -38,7 +38,7 @@ STAGE_DEFAULT_PRECONDITION_FRACTIONS: dict[str, float] = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train ResMLP Value Iteration (DAVI) model for a CFOP stage."
+        description="Train ResMLP Value Iteration (DAVI) model for CFOP stage."
     )
 
     # Stage
@@ -56,13 +56,13 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="per_sticker",
         choices=["per_sticker", "per_piece"],
-        help="Input representation format (per_sticker: 324-d, per_piece: 256-d).",
+        help="Input format (per_sticker: 324-d, per_piece: 292-d).",
     )
     parser.add_argument(
-        "--n1", type=int, default=5000, help="First linear layer width."
+        "--n1", type=int, default=700, help="First linear layer width."
     )
     parser.add_argument(
-        "--n2", type=int, default=1000, help="Residual blocks width."
+        "--n2", type=int, default=643, help="Residual blocks width."
     )
     parser.add_argument(
         "--n_r", type=int, default=4, help="Number of residual blocks."
@@ -156,7 +156,7 @@ def parse_args() -> argparse.Namespace:
         "--precondition_fraction",
         type=float,
         default=None,
-        help="Fraction of batch drawn from stage precondition set (defaults: cross: 0.0, f2l/oll/pll: 0.35).",
+        help="Fraction drawn from precondition set (defaults: 0.0 or 0.35).",
     )
     parser.add_argument(
         "--depth_sampling",
@@ -233,7 +233,7 @@ def parse_args() -> argparse.Namespace:
         "--output_dir",
         type=str,
         default=None,
-        help="Custom output directory. If None, defaults to runs/davi/<stage>/<timestamp>[_<exp_name>].",
+        help="Custom output dir. If None, defaults to runs/davi/<stage>/...",
     )
     parser.add_argument(
         "--exp_name",
@@ -268,7 +268,8 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(
-        f"Target stage: {args.stage} | Output directory: {save_dir} | Device: {device}"
+        f"Target stage: {args.stage} | Output directory: {save_dir} | "
+        f"Device: {device}"
     )
 
     # Resolve seeds
@@ -326,9 +327,9 @@ def main() -> None:
         }
         with open(save_dir / "model_profile.json", "w", encoding="utf-8") as f:
             json.dump(profile_data, f, indent=2)
-        logger.info(
-            f"Model Profile: {profile_data['total_params']:,} params, {profile_data['flops_per_sample'] / 1e6:.2f} MFLOPs/sample"
-        )
+        n_params = profile_data["total_params"]
+        mflops = profile_data["flops_per_sample"] / 1e6
+        logger.info(f"Model Profile: {n_params:,} params, {mflops:.2f} MFLOPs")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not compute FLOP profile: {e}")
         macs_per_sample = None

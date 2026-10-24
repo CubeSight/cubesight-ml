@@ -26,16 +26,16 @@ class ResMLPValueWrapper(nn.Module):
 
 
 def build_model(cfg: dict[str, Any] | None = None) -> ResMLPValueWrapper:
-    """
-    Factory function to construct a ResMLPValueWrapper from configuration dictionary.
-    Defaults to DeepCubeA ResMLP architecture: per_sticker, n1=5000, n2=1000, n_r=4, dropout=0.0.
+    """Factory function to construct ResMLPValueWrapper from config dict.
+
+    Defaults to ResMLP: per_sticker, n1=700, n2=643, n_r=4, dropout=0.0.
     """
     if cfg is None:
         cfg = {}
 
     state_representation = cfg.get("state_representation", "per_sticker")
-    n1 = int(cfg.get("n1", 5000))
-    n2 = int(cfg.get("n2", 1000))
+    n1 = int(cfg.get("n1", 700))
+    n2 = int(cfg.get("n2", 643))
     n_r = int(cfg.get("n_r", 4))
     dropout_rate = float(cfg.get("dropout_rate", 0.0))
     output_dim = int(cfg.get("output_dim", 1))
