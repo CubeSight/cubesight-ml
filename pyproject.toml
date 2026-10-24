@@ -55,8 +55,14 @@ select = [
     "TC",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["slow: long-running training smoke tests"]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
-] 
+    "ruff>=0.15.9",
+]

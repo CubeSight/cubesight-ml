@@ -214,3 +214,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+IMPLEMENTATION_PLAN.md
+DeepCubeA.pdf
