@@ -8,8 +8,24 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fvcore>=0.1.5.post20221221",
+    "ipykernel>=7.2.0",
     "loguru>=0.7.3",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "scipy>=1.18.1",
+    "tensorboard>=2.20.0",
+    "torch>=2.5.1",
+    "tqdm>=4.67.3",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
 
 [project.scripts]
 cubesight-ml = "cubesight_ml:main"
@@ -19,44 +35,28 @@ requires = ["uv_build>=0.10.12,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
-# Strict adherence to the 80-character limit
 line-length = 80
 target-version = "py312"
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-# Enable absolutely every rule Ruff knows about
-select = ["ALL"]
-
-ignore = [
-    "D1",      # missing docstrings
-    "D203",    # one-blank-line-before-class (Conflicts with D211)
-    "D213",    # multi-line-summary-second-line (Conflicts with D212)
-    "COM812",  # missing-trailing-comma (Conflicts with the formatter)
-    "ISC001",  # single-line-implicit-string-concatenation (Conflicts with the formatter)
-    "ANN101",  # missing-type-self (Deprecated; ty/mypy infer this automatically)
-    "ANN102",  # missing-type-cls (Deprecated; same as above)
-    "FIX002",  # line-contains-todo (Too aggressive for active development)
-    "TD002",   # missing-todo-author (Overhead for solo/small projects)
-    "TD003",   # missing-todo-link (Overhead for solo/small projects)
-    "ERA001",  # found-commented-out-code (Annoying during ML experimentation)
-    "INP001",  # implicit-namespace-package (Triggers on scripts outside of src/)
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "C4",
+    "SIM",
+    "RET",
+    "BLE",
+    "TC",
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# Training scripts and notebooks often use "assert" for shape checking
-# and aren't intended as public APIs, so we can relax docstring/annotation rules.
-# for example: "train.py" = ["S101", "D", "ANN"]
-# for example: "tests/*" = ["S101", "D", "ANN"]
-
-[tool.ty]
-# "strict" is the equivalent of "mypy --strict".
-# It enforces:
-# - No untyped function definitions
-# - No implicit Any (from unannotated variables)
-# - No missing return type hints
-type-checking-mode = "strict"
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
-]
+    "pytest>=9.0.2",
+] 
