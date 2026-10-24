@@ -22,10 +22,9 @@ class DistanceMockModel(nn.Module):
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         # Count elements that don't match SOLVED_FLAT where mask is True
         solved = self.checker.solved_flat
-        masks = self.checker.masks  # (M, 40)
-        # x is (B, 40)
-        x_expanded = x.unsqueeze(1)  # (B, 1, 40)
-        # diff where mask is True
+        # x is (B, 40) or (B, 46)
+        x_expanded = x[..., :40].unsqueeze(1)  # (B, 1, 40)
+        masks = self.checker.masks
         diffs = (x_expanded != solved) & masks  # (B, M, 40)
         mismatch_counts = diffs.sum(dim=-1)  # (B, M)
         min_mismatches = mismatch_counts.min(dim=-1).values  # (B,)

@@ -14,6 +14,7 @@ from cubesight_ml.cube.layout import (
 from cubesight_ml.cube.moves import (
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
+    get_restore_rotations,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
@@ -129,18 +130,38 @@ class StagedSolver:
                 model=model,
                 puzzle_handler=handler,
                 batch_size=512,
-                move_penalties=move_penalties,
+                move_penalties=move_penalties if use_stm else None,
                 use_stm=use_stm,
                 verbose=verbose,
                 device=self.device,
             )
 
-    def solve(self, state: np.ndarray | torch.Tensor) -> StagedSolution:
+    def solve(
+        self,
+        state: np.ndarray | torch.Tensor,
+        centers: np.ndarray | None = None,
+    ) -> StagedSolution:
         """Solves a cube state through the 4 sequential CFOP stages."""
         if isinstance(state, torch.Tensor):
             curr_state = state.cpu().numpy().astype(np.int8)
         else:
             curr_state = state.copy()
+        if curr_state.ndim == 2:
+            curr_state = curr_state[0]
+
+        if centers is not None:
+            centers = np.asarray(centers, dtype=np.int8)
+            if centers.ndim == 2:
+                centers = centers[0]
+
+        # Ensure 46-element state with centers appended
+        if curr_state.shape[-1] >= 46:
+            centers = curr_state[40:46]
+        elif centers is not None:
+            curr_state = np.concatenate([curr_state[:40], centers])
+        else:
+            centers = np.arange(6, dtype=np.int8)
+            curr_state = np.concatenate([curr_state, centers])
 
         all_moves: list[int | str] = []
         stage_moves: dict[Stage, list[int]] = {}
@@ -148,6 +169,20 @@ class StagedSolver:
         stage_stm_lengths: dict[Stage, int] = {}
         stage_costs: dict[Stage, float] = {}
         stage_stats: dict[Stage, dict[str, Any]] = {}
+
+        # ------------------------------------------------------------------
+        # Stage 0: Reorient cube to canonical centers if non-canonical
+        # ------------------------------------------------------------------
+        if centers is not None:
+            c_tuple = tuple(int(c) for c in centers)
+            if c_tuple != (0, 1, 2, 3, 4, 5):
+                restore_rotations = get_restore_rotations(c_tuple)
+                for rot_name in restore_rotations:
+                    rot_idx = MOVE_TO_INDEX[rot_name]
+                    curr_state = apply_action_sequence(
+                        curr_state, [rot_idx], self.cube_ops
+                    )
+                    all_moves.append(rot_idx)
 
         # ------------------------------------------------------------------
         # Stage 1: Color-Neutral Cross
@@ -190,12 +225,15 @@ class StagedSolver:
         rot_cmd = FACE_TO_D_ROTATIONS[solved_face]
 
         if rot_cmd != "id":
-            curr_state = apply_cube_rotation(curr_state, rot_cmd)
+            curr_pieces = apply_cube_rotation(curr_state[:40], rot_cmd)
+            curr_state = np.concatenate(
+                [curr_pieces, np.arange(6, dtype=np.int8)]
+            )
             rot_idx = MOVE_TO_INDEX.get(rot_cmd, rot_cmd)
             all_moves.append(rot_idx)
 
         # Verify that D-cross is indeed now solved
-        assert ((curr_state == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
+        assert ((curr_state[:40] == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
 
         # ------------------------------------------------------------------
         # Stages 3..5: F2L -> OLL -> PLL (in standard D/U-frame)

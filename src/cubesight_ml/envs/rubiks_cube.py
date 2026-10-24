@@ -50,6 +50,7 @@ class RubiksCubeEnv(Env):
         use_stm: bool = True,
         use_double_moves: bool = True,
         include_rotations: bool = True,
+        scramble_face_moves_only: bool = True,
         rng: np.random.Generator | None = None,
     ) -> None:
         self.batch_size = batch_size
@@ -57,6 +58,7 @@ class RubiksCubeEnv(Env):
         self.use_stm = use_stm
         self.use_double_moves = use_double_moves
         self.include_rotations = include_rotations
+        self.scramble_face_moves_only = scramble_face_moves_only
         self.rng = rng
 
         if self.use_stm:
@@ -127,9 +129,17 @@ class RubiksCubeEnv(Env):
             )
 
     def _init_scramble_tables(self) -> None:
-        self._possible_moves = np.array(
-            self.get_possible_moves(), dtype=np.int32
-        )
+        if self.scramble_face_moves_only:
+            if self.use_double_moves:
+                self._possible_moves = np.arange(18, dtype=np.int32)
+            else:
+                self._possible_moves = np.array(
+                    [0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17], dtype=np.int32
+                )
+        else:
+            self._possible_moves = np.array(
+                self.get_possible_moves(), dtype=np.int32
+            )
         self.n_gens = len(self._possible_moves)
 
         num_actions = len(self._move_cp)
@@ -141,9 +151,9 @@ class RubiksCubeEnv(Env):
         move_to_idx = {
             int(move): idx for idx, move in enumerate(self._possible_moves)
         }
-        for move in self._possible_moves:
+        for move in range(num_actions):
             inv_move = int(self.inverse_moves[move])
-            self._action_to_inv_idx[move] = move_to_idx[inv_move]
+            self._action_to_inv_idx[move] = move_to_idx.get(inv_move, 0)
 
         self._generator_inv_idx = np.array(
             [self._action_to_inv_idx[m] for m in self._possible_moves],
@@ -252,7 +262,10 @@ class RubiksCubeEnv(Env):
             self.centers[:] = np.arange(6, dtype=np.int8)
 
     def scramble(
-        self, depth: int = 26, depths: np.ndarray | None = None
+        self,
+        depth: int = 26,
+        depths: np.ndarray | None = None,
+        face_moves_only: bool | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Scramble the batch of cubes by performing random steps while
@@ -260,15 +273,26 @@ class RubiksCubeEnv(Env):
         If depths (shape: batch_size) is supplied, each cube is scrambled
         to its own specified depth using NOOP steps.
         """
-        actions_seq = self._get_scramble_actions(depth, depths=depths)
+        orig_setting = self.scramble_face_moves_only
+        if (
+            face_moves_only is not None
+            and face_moves_only != self.scramble_face_moves_only
+        ):
+            self.scramble_face_moves_only = face_moves_only
+            self._init_scramble_tables()
 
-        for d in range(depth):
-            self.step(actions_seq[d])
-
-        return self.get_state()
+        try:
+            actions_seq = self._get_scramble_actions(depth, depths=depths)
+            for d in range(depth):
+                self.step(actions_seq[d])
+            return self.get_state()
+        finally:
+            if self.scramble_face_moves_only != orig_setting:
+                self.scramble_face_moves_only = orig_setting
+                self._init_scramble_tables()
 
     def scramble_yield(
-        self, depth: int = 26
+        self, depth: int = 26, face_moves_only: bool | None = None
     ) -> Generator[
         tuple[
             tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
@@ -279,12 +303,24 @@ class RubiksCubeEnv(Env):
         Yield states step-by-step while scrambling, avoiding immediate
         inverse moves.
         """
-        actions_seq = self._get_scramble_actions(depth)
+        orig_setting = self.scramble_face_moves_only
+        if (
+            face_moves_only is not None
+            and face_moves_only != self.scramble_face_moves_only
+        ):
+            self.scramble_face_moves_only = face_moves_only
+            self._init_scramble_tables()
 
-        yield self.get_state(), None
-        for d in range(depth):
-            self.step(actions_seq[d])
-            yield self.get_state(), actions_seq[d]
+        try:
+            actions_seq = self._get_scramble_actions(depth)
+            yield self.get_state(), None
+            for d in range(depth):
+                self.step(actions_seq[d])
+                yield self.get_state(), actions_seq[d]
+        finally:
+            if self.scramble_face_moves_only != orig_setting:
+                self.scramble_face_moves_only = orig_setting
+                self._init_scramble_tables()
 
     def do_random_step(
         self,

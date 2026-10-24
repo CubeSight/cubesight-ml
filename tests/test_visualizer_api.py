@@ -198,3 +198,53 @@ def test_visualizer_server_endpoints():
             assert data["status"]["is_solved"] is True
     finally:
         server.shutdown()
+
+
+def test_solver_api_scramble_preserves_centers():
+    """Verify that api.scramble preserves canonical centers."""
+    import numpy as np
+
+    api = SolverAPI(device="cpu")
+    api.scramble(depth=20)
+    cp, co, ep, eo, centers = api.env.get_state_with_centers()
+    assert np.array_equal(centers[0], np.arange(6))
+
+
+def test_solver_api_solve_cross_matches_center():
+    """Verify that solved cross edges match the center piece in the visualizer."""
+    api = SolverAPI(device="cpu")
+    api.scramble(depth=4)
+
+    res = api.solve(stage="cross", beam_width=50, max_steps=20)
+    assert res["success"] is True
+
+    # Inspect last state
+    last_state = res["intermediate_states"][-1]
+    faces = last_state["faces"]
+
+    matched_cross_face = None
+    for f_name, grid in faces.items():
+        center = grid[4]
+        cross_edges = [grid[1], grid[3], grid[5], grid[7]]
+        if all(e == center for e in cross_edges):
+            matched_cross_face = f_name
+            break
+
+    assert matched_cross_face is not None, (
+        "Solved cross edges do not match the face's center piece!"
+    )
+
+
+def test_solver_api_solve_rotated_cube():
+    """Verify that visualizer solve reorients rotated cube before solving."""
+    import numpy as np
+
+    api = SolverAPI(device="cpu")
+    api.apply_move("x")
+    _, _, _, _, centers = api.env.get_state_with_centers()
+    assert not np.array_equal(centers[0], np.arange(6))
+
+    res = api.solve(stage="cross", beam_width=50, max_steps=20)
+    assert res["success"] is True
+    # The first move should be the restoring rotation x'
+    assert res["moves"][0] == "x'"

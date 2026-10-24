@@ -26,7 +26,7 @@ class DistanceMockModel(nn.Module):
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         solved = self.checker.solved_flat
         masks = self.checker.masks  # (M, 40)
-        x_expanded = x.unsqueeze(1)  # (B, 1, 40)
+        x_expanded = x[..., :40].unsqueeze(1)  # (B, 1, 40)
         diffs = (x_expanded != solved) & masks  # (B, M, 40)
         mismatch_counts = diffs.sum(dim=-1)  # (B, M)
         min_mismatches = mismatch_counts.min(dim=-1).values  # (B,)
@@ -133,6 +133,6 @@ def test_beam_search_favors_lower_penalty_moves():
     u_idx = MOVE_TO_INDEX["U"]
     assert searcher.move_costs[u_idx].item() == pytest.approx(1.0 + 5.0)
 
-    # Rotations have base cost 0.0 + penalty
+    # Rotations count as moves in Beam Search (base cost 1.0)
     x_idx = MOVE_TO_INDEX["x"]
-    assert searcher.move_costs[x_idx].item() == pytest.approx(0.0)
+    assert searcher.move_costs[x_idx].item() == pytest.approx(1.0)

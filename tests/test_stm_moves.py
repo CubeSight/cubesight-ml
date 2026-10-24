@@ -28,15 +28,10 @@ def test_stm_move_definitions():
     assert len(WIDE_MOVES) == 18
     assert len(ROTATION_MOVES) == 9
 
-    # Verify base costs: rotations cost 0.0, turns cost 1.0
-    for name in ROTATION_MOVES:
-        idx = MOVE_TO_INDEX[name]
-        assert BASE_MOVE_COSTS_STM[idx] == 0.0
-
+    # Verify base costs: all moves (including rotations) cost 1.0
     for name in ALL_MOVES:
-        if name not in ROTATION_MOVES:
-            idx = MOVE_TO_INDEX[name]
-            assert BASE_MOVE_COSTS_STM[idx] == 1.0
+        idx = MOVE_TO_INDEX[name]
+        assert BASE_MOVE_COSTS_STM[idx] == 1.0
 
 
 def test_stm_inverses():

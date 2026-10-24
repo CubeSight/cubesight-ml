@@ -91,11 +91,8 @@ SLICE_MOVE_SET: set[str] = set(SLICE_MOVES)
 WIDE_MOVE_SET: set[str] = set(WIDE_MOVES)
 ROTATION_MOVE_SET: set[str] = set(ROTATION_MOVES)
 
-# In STM, turns count as 1 move, while rotations count as 0 moves
-BASE_MOVE_COSTS_STM: np.ndarray = np.array(
-    [0.0 if m in ROTATION_MOVE_SET else 1.0 for m in ALL_MOVES],
-    dtype=np.float32,
-)
+# In STM for beam search, all moves (including rotations) count as 1 move
+BASE_MOVE_COSTS_STM: np.ndarray = np.ones(NUM_MOVES, dtype=np.float32)
 
 
 def get_possible_moves(
@@ -480,3 +477,52 @@ def parse_move_penalties(
             )
 
     return out
+
+
+def _build_center_restore_map() -> dict[tuple[int, ...], list[str]]:
+    """Precomputes BFS rotation sequences to restore canonical centers."""
+    canonical = (0, 1, 2, 3, 4, 5)
+    parent: dict[tuple[int, ...], tuple[tuple[int, ...] | None, str | None]] = {
+        canonical: (None, None)
+    }
+    queue: list[tuple[int, ...]] = [canonical]
+
+    while queue:
+        curr = queue.pop(0)
+        curr_arr = np.array(curr, dtype=np.int8)
+        for rot in ROTATION_MOVES:
+            m_idx = MOVE_TO_INDEX[rot]
+            perm = MOVE_CENTERS_54[m_idx]
+            nxt = tuple(int(x) for x in curr_arr[perm])
+            if nxt not in parent:
+                parent[nxt] = (curr, rot)
+                queue.append(nxt)
+
+    restore_map: dict[tuple[int, ...], list[str]] = {}
+    for state in parent:
+        moves: list[str] = []
+        c: tuple[int, ...] | None = state
+        while c is not None and c != canonical:
+            p, m = parent[c]
+            if m is not None:
+                inv_idx = int(INVERSE_MOVES_54[MOVE_TO_INDEX[m]])
+                moves.append(INDEX_TO_MOVE[inv_idx])
+            c = p
+        restore_map[state] = moves
+
+    return restore_map
+
+
+CENTER_RESTORE_MAP: dict[tuple[int, ...], list[str]] = (
+    _build_center_restore_map()
+)
+
+
+def get_restore_rotations(
+    centers: tuple[int, ...] | list[int] | np.ndarray,
+) -> list[str]:
+    """Returns whole-cube rotation moves restoring centers to canonical."""
+    key = tuple(int(c) for c in centers)
+    if key not in CENTER_RESTORE_MAP:
+        raise ValueError(f"Invalid or unreachable center configuration: {key}")
+    return list(CENTER_RESTORE_MAP[key])

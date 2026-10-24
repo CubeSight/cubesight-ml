@@ -66,8 +66,17 @@ def test_env_orientation_and_parity_invariants():
         # Parity of corner permutation equals parity of edge permutation
         assert permutation_parity(cp[i]) == permutation_parity(ep[i])
 
-    # In STM, slices and rotations also move centers; total group parity sums to 0 mod 2
-    env_stm = RubiksCubeEnv(batch_size=batch_size, use_stm=True)
+    # Default scramble preserves centers
+    env_default = RubiksCubeEnv(batch_size=batch_size, use_stm=True)
+    _, _, _, _ = env_default.scramble(depth=30)
+    for i in range(batch_size):
+        assert np.array_equal(env_default.centers[i], np.arange(6))
+
+    # In STM with face_moves_only=False, slices and rotations also move centers;
+    # total group parity sums to 0 mod 2
+    env_stm = RubiksCubeEnv(
+        batch_size=batch_size, use_stm=True, scramble_face_moves_only=False
+    )
     cp_s, co_s, ep_s, eo_s = env_stm.scramble(depth=30)
     for i in range(batch_size):
         assert np.sum(co_s[i]) % 3 == 0

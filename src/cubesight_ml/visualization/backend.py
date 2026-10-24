@@ -14,13 +14,18 @@ from cubesight_ml.cube.layout import (
 from cubesight_ml.cube.moves import (
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
+    get_restore_rotations,
     parse_move_penalties,
 )
+from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.envs.rubiks_cube import RubiksCubeEnv
 from cubesight_ml.models.value_wrapper import build_model
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
-from cubesight_ml.search.staged_solver import StagedSolver
+from cubesight_ml.search.staged_solver import (
+    StagedSolver,
+    apply_action_sequence,
+)
 from cubesight_ml.stages.definitions import (
     CROSS_SPEC,
     F2L_SPEC,
@@ -49,7 +54,7 @@ class DistanceMockModel(nn.Module):
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         solved = self.checker.solved_flat
         masks = self.checker.masks
-        x_expanded = x.unsqueeze(1)
+        x_expanded = x[..., :40].unsqueeze(1)
         diffs = (x_expanded != solved) & masks
         mismatch_counts = diffs.sum(dim=-1)
         min_mismatches = mismatch_counts.min(dim=-1).values
@@ -330,7 +335,7 @@ class SolverAPI:
                 move_penalties=penalties,
                 device=self.device,
             )
-            sol = solver.solve(initial_pieces)
+            sol = solver.solve(initial_pieces, centers=centers[0])
             elapsed = time.perf_counter() - start_time
 
             success = sol.solved
@@ -365,6 +370,21 @@ class SolverAPI:
             stage_enum = Stage(stage)
             spec = STAGES[stage_enum]
             checker = StageGoalChecker(spec, device=self.device)
+
+            # Reorient cube to canonical centers if non-canonical
+            prefix_rotations: list[str] = []
+            curr_pieces = initial_pieces.copy()
+            c_tuple = tuple(int(c) for c in centers[0])
+            if c_tuple != (0, 1, 2, 3, 4, 5):
+                prefix_rotations = get_restore_rotations(c_tuple)
+                if prefix_rotations:
+                    rot_ops = TorchCubeOps(use_stm=True, device=self.device)
+                    for r_name in prefix_rotations:
+                        r_idx = MOVE_TO_INDEX[r_name]
+                        curr_pieces = apply_action_sequence(
+                            curr_pieces, [r_idx], rot_ops
+                        )
+
             handler = BeamSearchRubiksCubeHandler(
                 goal_checker=checker,
                 use_stm=True,
@@ -379,8 +399,13 @@ class SolverAPI:
                 use_stm=True,
                 device=self.device,
             )
+            initial_centers = (
+                np.arange(6, dtype=np.int8) if prefix_rotations else centers[0]
+            )
+            curr_flat = curr_pieces[0] if curr_pieces.ndim == 2 else curr_pieces
+            state_46 = np.concatenate([curr_flat[:40], initial_centers])
             state_tensor = torch.tensor(
-                initial_pieces, dtype=torch.long, device=self.device
+                state_46, dtype=torch.long, device=self.device
             )
             sol_indices, steps, stats = searcher.find_solution(
                 state_tensor, beam_width=beam_width, num_steps=max_steps
@@ -388,11 +413,12 @@ class SolverAPI:
             elapsed = time.perf_counter() - start_time
 
             success = sol_indices is not None
-            moves = (
+            stage_sol_moves = (
                 [INDEX_TO_MOVE[i] for i in sol_indices]
                 if sol_indices is not None
                 else []
             )
+            moves = prefix_rotations + stage_sol_moves
             stm_len = stats.get("stm_length", 0)
             cost = stats.get("total_cost", 0.0)
             breakdown = [

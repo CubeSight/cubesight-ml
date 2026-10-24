@@ -24,7 +24,7 @@ class StageDistanceMock(nn.Module):
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         solved = self.checker.solved_flat
         masks = self.checker.masks
-        x_expanded = x.unsqueeze(1)
+        x_expanded = x[..., :40].unsqueeze(1)
         diffs = (x_expanded != solved) & masks
         mismatch_counts = diffs.sum(dim=-1)
         min_mismatches = mismatch_counts.min(dim=-1).values
@@ -115,3 +115,110 @@ def test_staged_solver_failure_handling():
     result = solver.solve(scrambled)
     assert result.solved is False
     assert result.failed_stage == Stage.PLL
+
+
+def test_get_restore_rotations_all_24_orientations():
+    """Verify that get_restore_rotations restores all 24 reachable center orientations."""
+    import numpy as np
+
+    from cubesight_ml.cube.moves import (
+        CENTER_RESTORE_MAP,
+        MOVE_CENTERS_54,
+        MOVE_TO_INDEX,
+        get_restore_rotations,
+    )
+
+    canonical = (0, 1, 2, 3, 4, 5)
+    assert len(CENTER_RESTORE_MAP) == 24
+
+    for target_center in CENTER_RESTORE_MAP:
+        rot_moves = get_restore_rotations(target_center)
+        curr = np.array(target_center, dtype=np.int8)
+        for m in rot_moves:
+            curr = curr[MOVE_CENTERS_54[MOVE_TO_INDEX[m]]]
+        assert tuple(curr) == canonical
+
+
+def test_staged_solver_with_non_canonical_centers():
+    """Verify StagedSolver automatically reorients cubes with rotated centers."""
+    import numpy as np
+
+    from cubesight_ml.cube.moves import MOVE_CENTERS_54, MOVE_TO_INDEX
+
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+    solver = StagedSolver(
+        models=models, beam_width=10, max_steps=5, device="cpu"
+    )
+
+    # Rotate solved cube with 'x' (center U becomes Green 2, etc.)
+    x_idx = MOVE_TO_INDEX["x"]
+    x_prime_idx = MOVE_TO_INDEX["x'"]
+    rotated_cube = (
+        solver.cube_ops.apply_moves(
+            torch.tensor(SOLVED_FLAT, dtype=torch.long).unsqueeze(0),
+            torch.tensor([x_idx], dtype=torch.long),
+        )
+        .squeeze(0)
+        .numpy()
+    )
+
+    rotated_centers = np.arange(6, dtype=np.int8)[MOVE_CENTERS_54[x_idx]]
+
+    result = solver.solve(rotated_cube, centers=rotated_centers)
+    assert result.solved is True
+    # The first move should be the restoring rotation x'
+    assert result.moves[0] == x_prime_idx
+
+
+def test_full_stm_rotations_counted_and_executed():
+    """Verify that full STM is used, rotations count as 1.0, and centers match."""
+
+    from cubesight_ml.cube.moves import (
+        BASE_MOVE_COSTS_STM,
+        MOVE_TO_INDEX,
+        ROTATION_MOVES,
+    )
+    from cubesight_ml.stages.goal_checker import is_goal_np
+
+    # 1. Rotations must count as 1.0 move in BASE_MOVE_COSTS_STM
+    for rot in ROTATION_MOVES:
+        idx = MOVE_TO_INDEX[rot]
+        assert BASE_MOVE_COSTS_STM[idx] == 1.0
+
+    # 2. Solver configured with full STM and rotations
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+    solver = StagedSolver(
+        models=models,
+        beam_width=10,
+        max_steps=5,
+        use_stm=True,
+        use_double_moves=True,
+        include_rotations=True,
+        device="cpu",
+    )
+
+    # 3. All 54 moves must be present in searchers
+    assert solver.cube_ops.num_moves == 54
+    for st in Stage:
+        assert solver.searchers[st].n_moves == 54
+        # Verify rotation move cost in searcher is 1.0
+        x_idx = MOVE_TO_INDEX["x"]
+        assert solver.searchers[st].move_costs[x_idx].item() == 1.0
+
+    # 4. Solves with full STM
+    scramble_ops = TorchCubeOps(use_stm=True, device="cpu")
+    solved_46 = torch.tensor(
+        list(SOLVED_FLAT) + [0, 1, 2, 3, 4, 5], dtype=torch.long
+    ).unsqueeze(0)
+    # Scramble with a rotation move 'y' and face move 'U'
+    moves = torch.tensor(
+        [MOVE_TO_INDEX["y"], MOVE_TO_INDEX["U"]], dtype=torch.long
+    )
+    curr = solved_46
+    for m in moves:
+        curr = scramble_ops.apply_moves(curr, m.unsqueeze(0))
+
+    scrambled_46 = curr.squeeze(0).numpy()
+    res = solver.solve(scrambled_46)
+    assert res.solved is True
+    assert is_goal_np(res.final_state, STAGES[Stage.PLL])
