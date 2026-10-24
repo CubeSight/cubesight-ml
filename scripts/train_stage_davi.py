@@ -9,6 +9,7 @@ from fvcore.nn import FlopCountAnalysis
 from loguru import logger
 from torch.optim.lr_scheduler import ExponentialLR
 
+from cubesight_ml.cube.moves import INDEX_TO_MOVE, parse_move_penalties
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.datasets.rubiks_cube.stage_davi_dataset import (
     create_stage_davi_dataloader,
@@ -242,6 +243,14 @@ def parse_args() -> argparse.Namespace:
         help="Optional experiment name tag for runs folder.",
     )
 
+    # Ergonomic move penalties
+    parser.add_argument(
+        "--move_penalties",
+        type=str,
+        default=None,
+        help="Path to JSON file or preset name for ergonomic move penalties.",
+    )
+
     return parser.parse_args()
 
 
@@ -297,6 +306,16 @@ def main() -> None:
     config_dict.update(seeds_dict)
     with open(save_dir / "config.json", "w", encoding="utf-8") as f:
         json.dump(config_dict, f, indent=2)
+
+    if args.move_penalties:
+        penalties_arr = parse_move_penalties(args.move_penalties)
+        penalties_dict = {
+            INDEX_TO_MOVE[i]: float(penalties_arr[i])
+            for i in range(len(penalties_arr))
+            if penalties_arr[i] > 0.0
+        }
+        with open(save_dir / "move_penalties.json", "w", encoding="utf-8") as f:
+            json.dump(penalties_dict, f, indent=2)
 
     # Build model & target model
     model_cfg = {
@@ -420,6 +439,7 @@ def main() -> None:
         batch_size=args.batch_size,
         stage=args.stage,
         model_config=model_cfg,
+        move_penalties=args.move_penalties,
         grad_accumulation_steps=args.grad_accumulation_steps,
         clip_norm=args.clip_norm,
         loss_interval=args.loss_interval,

@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +10,11 @@ from loguru import logger
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from cubesight_ml.cube.moves import (
+    BASE_MOVE_COSTS_STM,
+    NUM_MOVES,
+    parse_move_penalties,
+)
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.stages.definitions import StageSpec
 from cubesight_ml.stages.goal_checker import StageGoalChecker
@@ -33,6 +39,12 @@ def train_davi(
     batch_size: int,
     stage: str,
     model_config: dict[str, Any],
+    move_penalties: dict[str, float]
+    | np.ndarray
+    | torch.Tensor
+    | str
+    | Path
+    | None = None,
     grad_accumulation_steps: int = 1,
     clip_norm: float | None = 1.0,
     loss_interval: int = 100,
@@ -48,13 +60,32 @@ def train_davi(
     additional_save_steps: set[int] | None = None,
     warmup_steps: int = 1,
 ) -> None:
-    """
-    Main DeepCubeA Value Iteration (DAVI) training loop for sequential CFOP stages.
-    """
+    """DeepCubeA Value Iteration (DAVI) training loop for CFOP stages."""
     device = torch.device(device)
     active_model = active_model.to(device)
     target_model = target_model.to(device)
     target_model.eval()
+
+    # Parse execution penalties & compute step costs for actions
+    penalties_np = parse_move_penalties(move_penalties)
+    base_costs_np = (
+        BASE_MOVE_COSTS_STM.copy()
+        if cube_ops.use_stm
+        else np.ones(NUM_MOVES, dtype=np.float32)
+    )
+    total_costs_np = base_costs_np + penalties_np
+    action_indices = cube_ops.moves.cpu().numpy()
+    move_costs_t = torch.tensor(
+        total_costs_np[action_indices], dtype=torch.float32, device=device
+    )
+    has_penalties = bool(np.any(penalties_np > 0.0))
+    if has_penalties:
+        logger.info(
+            f"Applying ergonomic move penalties during training: "
+            f"min_cost={move_costs_t.min().item():.2f}, "
+            f"max_cost={move_costs_t.max().item():.2f}, "
+            f"mean_cost={move_costs_t.mean().item():.2f}"
+        )
 
     save_dir.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(log_dir=str(save_dir / "tensorboard"))
@@ -74,13 +105,17 @@ def train_davi(
             parents_w = parents_w.to(device, non_blocking=True)
             with torch.no_grad():
                 _ = compute_davi_targets(
-                    target_model, parents_w, cube_ops, goal_checker
+                    target_model,
+                    parents_w,
+                    cube_ops,
+                    goal_checker,
+                    move_costs=move_costs_t,
                 )
                 _ = active_model(parents_w)["value"]
         logger.info("Warm-up complete.")
 
     # FLOP accounting: 1 MAC = 2 FLOPs.
-    # Active forward + backward: 3 * 2 * MACs = 6 * MACs. Target forward: 2 * MACs * num_actions.
+    # Active: 6 * MACs. Target forward: 2 * MACs * num_actions.
     n_actions = len(cube_ops.moves)
     flops_per_active_sample = 6.0 * macs_per_sample if macs_per_sample else None
     flops_per_target_sample = (
@@ -94,12 +129,14 @@ def train_davi(
     running_loss = 0.0
     best_train_loss = float("inf")
     best_eval_solve_rate = -1.0
+    best_eval_cost = float("inf")
     best_eval_length = float("inf")
 
     start_time = time.perf_counter()
 
     logger.info(
-        f"Starting DAVI training for stage '{stage}', steps={steps}, device={device}"
+        f"Starting DAVI training for stage '{stage}', steps={steps}, "
+        f"device={device}"
     )
 
     try:
@@ -118,6 +155,7 @@ def train_davi(
                     parents=parents,
                     cube_ops=cube_ops,
                     goal_checker=goal_checker,
+                    move_costs=move_costs_t,
                 )
 
             # 2. Compute active model predictions
@@ -190,7 +228,9 @@ def train_davi(
                 writer.flush()
 
                 logger.info(
-                    f"Step {step:05d}/{steps} | Stage: {stage} | Mean Loss: {mean_loss:.4f} | LR: {current_lr:.2e} | Time: {elapsed_time:.1f}s"
+                    f"Step {step:05d}/{steps} | Stage: {stage} | "
+                    f"Mean Loss: {mean_loss:.4f} | LR: {current_lr:.2e} | "
+                    f"Time: {elapsed_time:.1f}s"
                 )
 
                 # Save best train loss model
@@ -223,8 +263,10 @@ def train_davi(
                 ):
                     target_model.load_state_dict(active_model.state_dict())
                     sync_policy.on_sync(step)
+                    sync_count = getattr(sync_policy, "num_syncs", 0)
                     logger.info(
-                        f"Step {step:05d}: Target network SYNCED (sync #{getattr(sync_policy, 'num_syncs', 0)})."
+                        f"Step {step:05d}: Target network SYNCED "
+                        f"(sync #{sync_count})."
                     )
                     writer.add_scalar(
                         "Sync/count", getattr(sync_policy, "num_syncs", 0), step
@@ -241,27 +283,38 @@ def train_davi(
                             beam_width=eval_beam_width,
                             max_steps=eval_max_steps,
                             device=device,
+                            move_penalties=move_penalties,
                         )
                         active_model.train()
 
                         sr = eval_res["solve_rate"]
                         ml = eval_res["mean_length"]
+                        mc = eval_res.get("mean_cost", ml)
                         writer.add_scalar("Eval/solve_rate", sr, step)
                         writer.add_scalar("Eval/mean_solution_length", ml, step)
+                        writer.add_scalar("Eval/mean_solution_cost", mc, step)
                         writer.add_scalar(
                             "Eval/mean_nodes", eval_res["mean_nodes"], step
                         )
                         writer.flush()
 
                         logger.info(
-                            f"Eval @ Step {step:05d}: Solve Rate = {sr * 100:.1f}%, Mean Len = {ml:.2f}"
+                            f"Eval @ Step {step:05d}: Solve Rate = "
+                            f"{sr * 100:.1f}%, Mean Len = {ml:.2f}, "
+                            f"Mean Cost = {mc:.2f}"
                         )
 
                         # Save best eval model
                         if (sr > best_eval_solve_rate) or (
-                            sr == best_eval_solve_rate and ml < best_eval_length
+                            sr == best_eval_solve_rate
+                            and (
+                                mc < best_eval_cost
+                                if has_penalties
+                                else ml < best_eval_length
+                            )
                         ):
                             best_eval_solve_rate = sr
+                            best_eval_cost = mc
                             best_eval_length = ml
                             save_checkpoint_and_stats(
                                 path=save_dir / "best_eval_model.pt",
@@ -296,6 +349,7 @@ def train_davi(
                     beam_width=eval_beam_width,
                     max_steps=eval_max_steps,
                     device=device,
+                    move_penalties=move_penalties,
                 )
                 active_model.train()
                 writer.add_scalar(
@@ -303,6 +357,11 @@ def train_davi(
                 )
                 writer.add_scalar(
                     "Eval/mean_solution_length", eval_res["mean_length"], step
+                )
+                writer.add_scalar(
+                    "Eval/mean_solution_cost",
+                    eval_res.get("mean_cost", eval_res["mean_length"]),
+                    step,
                 )
                 writer.flush()
 
@@ -358,7 +417,8 @@ def train_davi(
 
     except KeyboardInterrupt:
         logger.warning(
-            f"Training interrupted at step {step}. Saving recovery checkpoint..."
+            f"Training interrupted at step {step}. "
+            "Saving recovery checkpoint..."
         )
         save_checkpoint_and_stats(
             path=save_dir / "interrupted_checkpoint.pt",

@@ -49,9 +49,9 @@ def test_davi_targets_goal_parent_masking():
 
 
 def test_davi_targets_goal_children_masking():
-    """
-    If any child of a parent is in the goal set, its value is masked to 0.0,
-    so the parent's target should be 1.0 + 0.0 = 1.0 (even if target network predicts 99.0).
+    """If child of a parent is in goal set, its value is masked to 0.0,
+
+    so parent target should be 1.0 + 0.0 = 1.0 even if model predicts 99.0.
     """
     ops = TorchCubeOps(use_double_moves=False, device="cpu")
     checker = StageGoalChecker(PLL_SPEC, device="cpu")
@@ -81,7 +81,7 @@ def test_davi_targets_goal_children_masking():
 
 
 def test_davi_targets_clamp_min():
-    """Verify clamp_min is respected when target network outputs negative numbers."""
+    """Verify clamp_min is respected when target network outputs negatives."""
     ops = TorchCubeOps(use_double_moves=False, device="cpu")
     checker = StageGoalChecker(CROSS_SPEC, device="cpu")
     model = DummyValueModel(constant_val=-10.0)
@@ -99,3 +99,60 @@ def test_davi_targets_clamp_min():
 
     # 1.0 + (-10.0) = -9.0 clamped to 0.0
     assert (targets == 0.0).all()
+
+
+def test_davi_targets_with_action_move_costs():
+    """Verify compute_davi_targets respects custom action move costs."""
+    ops = TorchCubeOps(use_double_moves=False, device="cpu")
+    checker = StageGoalChecker(PLL_SPEC, device="cpu")
+    model = DummyValueModel(constant_val=2.0)
+
+    # Non-goal state
+    parents = torch.tensor(
+        np.stack([SOLVED_FLAT + 1]),
+        dtype=torch.long,
+    )
+
+    # Custom costs of shape (A,)
+    action_costs = torch.full((ops.num_moves,), 5.0, dtype=torch.float32)
+    action_costs[3] = 2.5  # Cheapest action has cost 2.5
+
+    targets = compute_davi_targets(
+        target_model=model,
+        parents=parents,
+        cube_ops=ops,
+        goal_checker=checker,
+        move_costs=action_costs,
+    )
+
+    # Target should be min_a [ c(a) + J(s') ] = 2.5 + 2.0 = 4.5
+    assert torch.isclose(targets[0], torch.tensor(4.5))
+
+
+def test_davi_targets_with_54_move_costs_and_goal():
+    """Verify 54-move costs tensor indexing and goal masking interaction."""
+    ops = TorchCubeOps(use_double_moves=False, device="cpu")
+    checker = StageGoalChecker(PLL_SPEC, device="cpu")
+    model = DummyValueModel(constant_val=10.0)
+
+    # Create 1-move-away state from solved (apply U move)
+    solved_t = torch.tensor(SOLVED_FLAT, dtype=torch.long).unsqueeze(0)
+    move_u = torch.tensor([0], dtype=torch.long)
+    state_depth_1 = ops.apply_moves(solved_t, move_u)
+
+    # Move costs for all 54 moves: base 1.0, but U' (index 2) has cost 3.5
+    move_costs_54 = torch.ones(54, dtype=torch.float32)
+    move_costs_54[2] = 3.5
+
+    targets = compute_davi_targets(
+        target_model=model,
+        parents=state_depth_1,
+        cube_ops=ops,
+        goal_checker=checker,
+        move_costs=move_costs_54,
+    )
+
+    # For U', child is solved (J=0), so candidate cost is 3.5 + 0.0 = 3.5.
+    # For other moves, candidate cost is 1.0 + 10.0 = 11.0.
+    # Minimum is 3.5!
+    assert torch.isclose(targets[0], torch.tensor(3.5))
