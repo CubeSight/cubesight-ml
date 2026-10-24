@@ -13,6 +13,7 @@ dependencies = [
     "loguru>=0.7.3",
     "matplotlib>=3.10.8",
     "numpy>=2.4.3",
+    "pywebview>=6.2.1",
     "scipy>=1.18.1",
     "tensorboard>=2.20.0",
     "torch>=2.5.1",
@@ -29,6 +30,7 @@ torch = { index = "pytorch-cuda" }
 
 [project.scripts]
 cubesight-ml = "cubesight_ml:main"
+cubesight-visualize = "cubesight_ml.visualization.server:main"
 
 [build-system]
 requires = ["uv_build>=0.10.12,<0.11.0"]

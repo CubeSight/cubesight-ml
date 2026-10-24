@@ -112,9 +112,9 @@ class ConsoleLogger:
 
 def is_json_serializable_primitive(val: Any) -> bool:
     """Checks whether a value is a JSON-serializable primitive, list, or dict."""
-    if isinstance(val, (int, float, str, bool, type(None))):
+    if isinstance(val, int | float | str | bool | type(None)):
         return True
-    if isinstance(val, (list, tuple)):
+    if isinstance(val, list | tuple):
         return all(is_json_serializable_primitive(x) for x in val)
     if isinstance(val, dict):
         return all(

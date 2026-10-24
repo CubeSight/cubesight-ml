@@ -98,6 +98,28 @@ BASE_MOVE_COSTS_STM: np.ndarray = np.array(
 )
 
 
+def get_possible_moves(
+    use_stm: bool = True,
+    use_double_moves: bool = True,
+    include_rotations: bool = True,
+) -> list[int]:
+    """Returns valid action indices for the requested move space."""
+    if use_stm:
+        moves = []
+        for idx, name in enumerate(ALL_MOVES):
+            is_rotation = name in ROTATION_MOVE_SET
+            is_double = "2" in name
+            if is_rotation and not include_rotations:
+                continue
+            if is_double and not use_double_moves:
+                continue
+            moves.append(idx)
+        return moves
+    if use_double_moves:
+        return list(range(18))
+    return [0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17]
+
+
 def _compute_sticker_perms() -> tuple[np.ndarray, np.ndarray]:
     """
     Computes exact 54-sticker permutation arrays for all 54 STM moves plus NOOP.
@@ -414,9 +436,17 @@ def parse_move_penalties(
     out = np.zeros(NUM_MOVES, dtype=np.float32)
     if penalties is None:
         return out
+    if isinstance(penalties, np.ndarray):
+        if len(penalties) != NUM_MOVES:
+            raise ValueError(
+                f"Expected {NUM_MOVES} penalties, got {len(penalties)}"
+            )
+        return penalties.astype(np.float32)
+    if hasattr(penalties, "detach"):
+        return penalties.detach().cpu().numpy().astype(np.float32)
 
     data: dict[str, Any]
-    if isinstance(penalties, (str, Path)):
+    if isinstance(penalties, str | Path):
         p_path = Path(penalties)
         if p_path.is_file():
             with open(p_path, encoding="utf-8") as f:

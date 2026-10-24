@@ -105,6 +105,10 @@ def save_checkpoint_and_stats(
 def load_checkpoint(
     checkpoint_path: Path | str,
     device: torch.device | str = "cpu",
+    map_location: torch.device | str | None = None,
 ) -> dict[str, Any]:
     """Loads a saved checkpoint dict with CPU safety."""
-    return torch.load(checkpoint_path, map_location=device, weights_only=False)
+    target_device = map_location if map_location is not None else device
+    return torch.load(
+        checkpoint_path, map_location=target_device, weights_only=False
+    )

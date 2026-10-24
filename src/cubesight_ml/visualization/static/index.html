@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CubeSight-ML | 3D Rubik's Cube Solver Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="three.min.js"></script>
+  <script src="OrbitControls.js"></script>
+  <script src="cube3d.js"></script>
+  <script src="app.js"></script>
+</head>
+<body>
+  <!-- 3D Canvas Background -->
+  <div id="canvas-container"></div>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="logo-area">
+      <span class="cube-icon">🧊</span>
+      <span class="logo-title">CubeSight-ML</span>
+      <span class="logo-subtitle">3D Solver Studio</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div id="step-counter" style="font-size:13px; font-weight:600; color:#a1a1aa;">0 / 0</div>
+      <div id="status-badge" class="status-badge">
+        <span class="status-indicator"></span>
+        <span id="status-text">Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Left Sidebar Controls -->
+  <aside id="controls-sidebar">
+    <!-- Stage & Search Settings -->
+    <div>
+      <div class="section-title">Solver Settings</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="stage-select">CFOP Stage Mode</label>
+        <select id="stage-select">
+          <option value="all">Full 4-Stage CFOP Pipeline</option>
+          <option value="cross">Cross Stage (Color-Neutral)</option>
+          <option value="f2l">F2L Stage (First Two Layers)</option>
+          <option value="oll">OLL Stage (Orientation)</option>
+          <option value="pll">PLL Stage (Permutation)</option>
+        </select>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+        <div class="form-group">
+          <label for="beam-width">Beam Width</label>
+          <input type="number" id="beam-width" value="100" min="1" max="5000">
+        </div>
+        <div class="form-group">
+          <label for="max-steps">Max Steps</label>
+          <input type="number" id="max-steps" value="40" min="1" max="200">
+        </div>
+      </div>
+    </div>
+
+    <!-- Solve Button -->
+    <button id="btn-solve" class="btn-solve" style="width:100%;">
+      <span>⚡</span> Run Beam Search
+    </button>
+
+    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.08); margin:4px 0;">
+
+    <!-- Scramble Controls -->
+    <div>
+      <div class="section-title">Scramble & Setup</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <input type="number" id="scramble-depth" value="30" min="1" max="100" style="width:70px;">
+        <button id="btn-scramble" class="btn-primary" style="flex:1;">
+          Random Scramble
+        </button>
+      </div>
+
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="custom-scramble-input">Custom Moves</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="custom-scramble-input" placeholder="R U R' U' F' U2 F" style="flex:1;">
+          <button id="btn-apply-custom" class="btn-secondary">Apply</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Stage Goals / Setups</label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+          <button class="btn-secondary btn-precond" data-stage="cross">Cross Done</button>
+          <button class="btn-secondary btn-precond" data-stage="f2l">F2L Done</button>
+          <button class="btn-secondary btn-precond" data-stage="oll">OLL Done</button>
+          <button class="btn-secondary btn-precond" data-stage="pll">PLL Done</button>
+        </div>
+      </div>
+    </div>
+
+    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.08); margin:4px 0;">
+
+    <!-- Quick Manual Moves -->
+    <div>
+      <div class="section-title">Manual Moves</div>
+      <div class="quick-moves-wrap" style="margin-bottom:6px;">
+        <button class="move-btn" data-move="U">U</button>
+        <button class="move-btn" data-move="U'">U'</button>
+        <button class="move-btn" data-move="U2">U2</button>
+        <button class="move-btn" data-move="D">D</button>
+        <button class="move-btn" data-move="D'">D'</button>
+        <button class="move-btn" data-move="D2">D2</button>
+      </div>
+      <div class="quick-moves-wrap" style="margin-bottom:6px;">
+        <button class="move-btn" data-move="R">R</button>
+        <button class="move-btn" data-move="R'">R'</button>
+        <button class="move-btn" data-move="R2">R2</button>
+        <button class="move-btn" data-move="L">L</button>
+        <button class="move-btn" data-move="L'">L'</button>
+        <button class="move-btn" data-move="L2">L2</button>
+      </div>
+      <div class="quick-moves-wrap" style="margin-bottom:6px;">
+        <button class="move-btn" data-move="F">F</button>
+        <button class="move-btn" data-move="F'">F'</button>
+        <button class="move-btn" data-move="F2">F2</button>
+        <button class="move-btn" data-move="B">B</button>
+        <button class="move-btn" data-move="B'">B'</button>
+        <button class="move-btn" data-move="B2">B2</button>
+      </div>
+      <div class="quick-moves-wrap">
+        <button class="move-btn" data-move="M">M</button>
+        <button class="move-btn" data-move="M'">M'</button>
+        <button class="move-btn" data-move="E">E</button>
+        <button class="move-btn" data-move="S">S</button>
+        <button class="move-btn" data-move="x">x</button>
+        <button class="move-btn" data-move="y">y</button>
+        <button class="move-btn" data-move="z">z</button>
+      </div>
+    </div>
+
+    <button id="btn-reset" class="btn-secondary" style="margin-top:auto;">
+      Reset Cube
+    </button>
+  </aside>
+
+  <!-- Right Inspector Panel -->
+  <aside id="stats-inspector">
+    <div class="section-title">Solution Metrics</div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+      <div class="stat-card">
+        <span class="stat-label">STM Length</span>
+        <span id="stat-stm" class="stat-value">-</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Total Moves</span>
+        <span id="stat-moves" class="stat-value">-</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Exec Cost</span>
+        <span id="stat-cost" class="stat-value">-</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Search Time</span>
+        <span id="stat-time" class="stat-value">-</span>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px;">Stage Checklist</div>
+    <div class="stage-badge-list">
+      <div id="pill-cross" class="stage-pill">
+        <span>Cross Stage</span>
+        <span id="model-status-cross" style="font-size:10px; color:#a1a1aa;">-</span>
+      </div>
+      <div id="pill-f2l" class="stage-pill">
+        <span>F2L Stage</span>
+        <span id="model-status-f2l" style="font-size:10px; color:#a1a1aa;">-</span>
+      </div>
+      <div id="pill-oll" class="stage-pill">
+        <span>OLL Stage</span>
+        <span id="model-status-oll" style="font-size:10px; color:#a1a1aa;">-</span>
+      </div>
+      <div id="pill-pll" class="stage-pill">
+        <span>PLL Stage</span>
+        <span id="model-status-pll" style="font-size:10px; color:#a1a1aa;">-</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Floating Bottom Playback Dock -->
+  <footer id="playback-dock">
+    <div class="playback-buttons">
+      <button id="btn-jump-start" class="ctrl-btn" title="Jump to start">⏮</button>
+      <button id="btn-step-bwd" class="ctrl-btn" title="Step backward">◀</button>
+      <button id="btn-play-pause" class="ctrl-btn" title="Play / Pause">▶</button>
+      <button id="btn-step-fwd" class="ctrl-btn" title="Step forward">▶</button>
+      <button id="btn-jump-end" class="ctrl-btn" title="Jump to end">⏭</button>
+    </div>
+
+    <!-- Move Chips Scroller -->
+    <div id="solution-chips" class="solution-chips-container">
+      <span style="color:#71717a; font-size:12px;">No active solution</span>
+    </div>
+
+    <!-- Speed Slider -->
+    <div class="speed-control">
+      <span id="speed-label">300ms</span>
+      <input type="range" id="speed-slider" min="80" max="1000" step="20" value="300">
+    </div>
+  </footer>
+</body>
+</html>

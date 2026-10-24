@@ -25,6 +25,7 @@ from cubesight_ml.cube.moves import (
     SLICE_MOVES,
     STICKER_MOVE_PERMS_54,
     WIDE_MOVES,
+    get_possible_moves,
     parse_move_penalties,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
@@ -54,6 +55,7 @@ __all__ = [
     "WIDE_MOVES",
     "apply_cube_rotation",
     "from_flat",
+    "get_possible_moves",
     "parse_move_penalties",
     "to_flat",
 ]

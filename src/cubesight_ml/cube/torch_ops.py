@@ -1,6 +1,14 @@
+import numpy as np
 import torch
 
-from cubesight_ml.envs.rubiks_cube import RubiksCubeEnv
+from cubesight_ml.cube.moves import (
+    MOVE_CENTERS_54,
+    MOVE_CO_54,
+    MOVE_CP_54,
+    MOVE_EO_54,
+    MOVE_EP_54,
+    get_possible_moves,
+)
 
 
 class TorchCubeOps:
@@ -18,31 +26,44 @@ class TorchCubeOps:
         self.use_double_moves = use_double_moves
         self.include_rotations = include_rotations
 
-        env = RubiksCubeEnv(
-            batch_size=1,
+        if self.use_stm:
+            raw_cp = MOVE_CP_54
+            raw_co = MOVE_CO_54
+            raw_ep = MOVE_EP_54
+            raw_eo = MOVE_EO_54
+            raw_centers = MOVE_CENTERS_54
+        else:
+            raw_cp = np.vstack([MOVE_CP_54[:18], np.arange(8, dtype=np.int32)])
+            raw_co = np.vstack([MOVE_CO_54[:18], np.zeros(8, dtype=np.int8)])
+            raw_ep = np.vstack([MOVE_EP_54[:18], np.arange(12, dtype=np.int32)])
+            raw_eo = np.vstack([MOVE_EO_54[:18], np.zeros(12, dtype=np.int8)])
+            raw_centers = np.vstack(
+                [MOVE_CENTERS_54[:18], np.arange(6, dtype=np.int8)]
+            )
+
+        self.move_cp = torch.tensor(
+            raw_cp, device=self.device, dtype=torch.int64
+        )
+        self.move_co = torch.tensor(
+            raw_co, device=self.device, dtype=torch.int64
+        )
+        self.move_ep = torch.tensor(
+            raw_ep, device=self.device, dtype=torch.int64
+        )
+        self.move_eo = torch.tensor(
+            raw_eo, device=self.device, dtype=torch.int64
+        )
+        self.move_centers = torch.tensor(
+            raw_centers, device=self.device, dtype=torch.int64
+        )
+
+        possible_moves = get_possible_moves(
             use_stm=use_stm,
             use_double_moves=use_double_moves,
             include_rotations=include_rotations,
         )
-
-        self.move_cp = torch.tensor(
-            env._move_cp, device=self.device, dtype=torch.int64
-        )
-        self.move_co = torch.tensor(
-            env._move_co, device=self.device, dtype=torch.int64
-        )
-        self.move_ep = torch.tensor(
-            env._move_ep, device=self.device, dtype=torch.int64
-        )
-        self.move_eo = torch.tensor(
-            env._move_eo, device=self.device, dtype=torch.int64
-        )
-        self.move_centers = torch.tensor(
-            env._move_centers, device=self.device, dtype=torch.int64
-        )
-
         self.moves = torch.tensor(
-            env.get_possible_moves(),
+            possible_moves,
             dtype=torch.long,
             device=self.device,
         )

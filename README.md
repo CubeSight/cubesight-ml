@@ -226,6 +226,37 @@ Outputs written to `runs/eval/pipeline/<timestamp>/`:
 
 ---
 
+### 4. Interactive 3D Rubik's Cube Solver Studio (`visualize_solver.py`)
+
+Launch the native desktop 3D Rubik's Cube window to run and inspect Beam Search solving visually:
+
+```bash
+# Launch native desktop 3D window (auto-discovers latest checkpoints in runs/)
+uv run python scripts/visualize_solver.py
+
+# Or launch with explicit checkpoints
+uv run python scripts/visualize_solver.py \
+  --cross_ckpt runs/davi/cross/best_model.pt \
+  --f2l_ckpt runs/davi/f2l/best_model.pt \
+  --oll_ckpt runs/davi/oll/best_model.pt \
+  --pll_ckpt runs/davi/pll/best_model.pt \
+  --move_penalties presets/ergonomic_penalties.json
+
+# Or open in default web browser instead of desktop window
+uv run python scripts/visualize_solver.py --browser
+```
+
+#### Studio Features:
+- **Real-Time 3D WebGL Cube**: 360° mouse orbit controls, smooth zoom, realistic sticker materials, and dark-mode glassmorphic interface.
+- **Stage & Pipeline Solving**: Solve individual stages (Cross, F2L, OLL, PLL) or the entire 4-stage CFOP pipeline sequentially.
+- **Smooth 3D Layer Animations**: Continuous animated layer turns for all 54 STM moves (faces, slices $M, E, S$, wide turns $r, l, u, d, f, b$, and rotations $x, y, z$).
+- **Timeline & Playback Controls**: Play, pause, step forward, step backward, jump to start/end, and adjustable move animation speed.
+- **Interactive Move Chips**: Clickable solution timeline chips that jump directly to any step.
+- **Scramblers & Preconditions**: 1-click random scrambles (configurable depth 1..100), custom move sequence input (e.g. `R U R' U'`), or legal stage precondition states.
+- **Live Metrics Inspector**: Real-time display of STM length, total length, execution cost, search time, and stage breakdown.
+
+---
+
 ## Artifacts & Runs Layout
 
 All runs output to a clean, standardized hierarchy:
