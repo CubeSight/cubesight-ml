@@ -312,7 +312,7 @@ def main() -> None:
     # Flop profiling
     try:
         active_model.eval()
-        dummy_state = torch.zeros(2, 40, dtype=torch.long, device=device)
+        dummy_state = torch.zeros(2, 46, dtype=torch.long, device=device)
         flops_analysis = FlopCountAnalysis(active_model, dummy_state)
         macs_per_sample = float(flops_analysis.total()) / 2.0
         active_model.train()
@@ -395,7 +395,12 @@ def main() -> None:
 
     stage_enum = Stage(args.stage)
     spec = STAGES[stage_enum]
-    cube_ops = TorchCubeOps(args.use_double_moves, device=device)
+    cube_ops = TorchCubeOps(
+        use_stm=True,
+        use_double_moves=args.use_double_moves,
+        include_rotations=True,
+        device=device,
+    )
     goal_checker = StageGoalChecker(spec, device=device)
 
     # Run DAVI training

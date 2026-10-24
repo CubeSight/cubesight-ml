@@ -45,17 +45,29 @@ from cubesight_ml.visualization.cube_state import (
 
 
 class DistanceMockModel(nn.Module):
-    """Fallback admissible heuristic model when trained checkpoints are not yet available."""
+    """Fallback admissible heuristic when checkpoints are not available."""
 
     def __init__(self, spec) -> None:
         super().__init__()
         self.checker = StageGoalChecker(spec, device="cpu")
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        solved = self.checker.solved_flat
-        masks = self.checker.masks
-        x_expanded = x[..., :40].unsqueeze(1)
-        diffs = (x_expanded != solved) & masks
+        masks = self.checker.masks.to(x.device)
+        if x.size(-1) >= 46:
+            c = x[..., 40:46].long()
+            h = (c * self.checker.weights.to(x.device)).sum(dim=-1)
+            c_ids = self.checker.lut.to(x.device)[h]
+            target = self.checker.solved_table.to(x.device)[c_ids]
+            x_pieces = x[..., :40]
+        else:
+            target = self.checker.solved_flat.to(x.device)
+            x_pieces = x
+
+        x_expanded = x_pieces.unsqueeze(-2)
+        target_expanded = (
+            target.unsqueeze(-2) if target.ndim == x_pieces.ndim else target
+        )
+        diffs = (x_expanded != target_expanded) & masks
         mismatch_counts = diffs.sum(dim=-1)
         min_mismatches = mismatch_counts.min(dim=-1).values
         return {"value": min_mismatches.unsqueeze(-1).float()}
@@ -94,10 +106,15 @@ class SolverAPI:
             "pll": None,
         }
         self.models: dict[str, nn.Module] = {}
-        self.is_heuristic: dict[str, bool] = {}
+        self.is_mock: dict[str, bool] = {}
+        self.is_heuristic = self.is_mock
 
-        self.move_penalties_cfg = move_penalties
-        self.default_penalties = parse_move_penalties(move_penalties)
+        self.move_penalties_cfg = (
+            move_penalties
+            if move_penalties is not None
+            else "presets/zero_penalties.json"
+        )
+        self.default_penalties = parse_move_penalties(self.move_penalties_cfg)
 
         self.goal_checkers = {
             Stage.CROSS: StageGoalChecker(CROSS_SPEC, device=self.device),
@@ -112,52 +129,85 @@ class SolverAPI:
     def _init_checkpoints(
         self, checkpoints: dict[str, str | Path | None] | None
     ) -> None:
-        # Check user-supplied
+        # Check user-supplied (CLI args or explicit config)
         if checkpoints:
             for s, path in checkpoints.items():
                 if path and Path(path).exists():
                     self.checkpoints[s] = Path(path)
 
-        # Auto-detect from runs/ if not provided
-        self.auto_discover_checkpoints()
+        # Do NOT auto-load default checkpoints from runs/
+        # Checkpoints remain None unless explicitly provided or chosen in the UI
 
         # Load or initialize models
         for s in ["cross", "f2l", "oll", "pll"]:
             self._load_or_create_model(s)
 
-    def auto_discover_checkpoints(self) -> dict[str, str | None]:
-        """Scans runs/ for the best or most recent checkpoint for each stage."""
+    def get_available_checkpoints(self) -> dict[str, list[str]]:
+        """Discovers available checkpoint files in runs/ for each stage."""
         runs_dir = Path("runs")
-        discovered: dict[str, str | None] = {}
+        available: dict[str, list[str]] = {
+            s: [] for s in ["cross", "f2l", "oll", "pll"]
+        }
+        if not runs_dir.exists():
+            return available
+
         for s in ["cross", "f2l", "oll", "pll"]:
-            if self.checkpoints.get(s) is not None:
-                discovered[s] = str(self.checkpoints[s])
-                continue
+            found: set[Path] = set()
+            for pattern in [f"**/{s}/**/*.pt", f"**/{s}.pt"]:
+                for p in runs_dir.glob(pattern):
+                    if p.is_file():
+                        found.add(p)
 
-            stage_runs = runs_dir / "davi" / s
-            best_ckpt: Path | None = None
-            if stage_runs.exists():
-                # Search for best_model.pt or final_model.pt or latest checkpoint
-                candidates = list(stage_runs.glob("**/best_model.pt"))
-                if not candidates:
-                    candidates = list(stage_runs.glob("**/final_model.pt"))
-                if not candidates:
-                    candidates = list(stage_runs.glob("**/*.pt"))
+            # If user loaded a checkpoint outside runs/, include it too
+            current = self.checkpoints.get(s)
+            if current and current.is_file():
+                found.add(current)
 
-                if candidates:
-                    # Pick most recent by modification time
-                    candidates.sort(
-                        key=lambda p: p.stat().st_mtime, reverse=True
-                    )
-                    best_ckpt = candidates[0]
+            sorted_paths = sorted(
+                found,
+                key=lambda p: (
+                    0
+                    if "best_model" in p.name
+                    else (1 if "final_model" in p.name else 2),
+                    -p.stat().st_mtime,
+                ),
+            )
+            available[s] = [str(p).replace("\\", "/") for p in sorted_paths]
 
-            if best_ckpt:
-                self.checkpoints[s] = best_ckpt
-                discovered[s] = str(best_ckpt)
-            else:
-                discovered[s] = None
+        return available
 
-        return discovered
+    def auto_discover_checkpoints(self) -> dict[str, str | None]:
+        """Discovers best checkpoint for each stage without auto-loading."""
+        avail = self.get_available_checkpoints()
+        return {
+            s: (avail[s][0] if avail[s] else None)
+            for s in ["cross", "f2l", "oll", "pll"]
+        }
+
+    def get_penalties_presets(self) -> dict[str, Any]:
+        """Scans presets/ directory for JSON penalty presets."""
+        presets_dir = Path("presets")
+        presets: list[str] = []
+        if presets_dir.is_dir():
+            for p in sorted(presets_dir.glob("*.json")):
+                presets.append(p.name)
+
+        if "zero_penalties.json" in presets:
+            presets.remove("zero_penalties.json")
+            presets.insert(0, "zero_penalties.json")
+        elif not presets:
+            presets = ["zero_penalties.json"]
+
+        selected = "zero_penalties.json"
+        if isinstance(self.move_penalties_cfg, str):
+            cfg_name = Path(self.move_penalties_cfg).name
+            if cfg_name in presets:
+                selected = cfg_name
+
+        return {
+            "presets": presets,
+            "selected": selected,
+        }
 
     def _load_or_create_model(self, stage_name: str) -> None:
         ckpt_path = self.checkpoints.get(stage_name)
@@ -178,22 +228,44 @@ class SolverAPI:
                     model.load_state_dict(data["model_state_dict"])
                 model.to(self.device).eval()
                 self.models[stage_name] = model
-                self.is_heuristic[stage_name] = False
+                self.is_mock[stage_name] = False
                 logger.info(
                     f"Loaded trained model for {stage_name} from {ckpt_path}"
                 )
                 return
             except Exception as e:  # noqa: BLE001
                 logger.warning(
-                    f"Failed loading checkpoint for {stage_name}: {e}. Falling back to heuristic."
+                    f"Failed loading checkpoint for {stage_name}: {e}. "
+                    "Falling back to mock model."
                 )
 
         # Fallback to DistanceMockModel
         spec = STAGES[Stage(stage_name)]
         mock = DistanceMockModel(spec).to(self.device).eval()
         self.models[stage_name] = mock
-        self.is_heuristic[stage_name] = True
-        logger.info(f"Using DistanceMockModel heuristic for {stage_name}")
+        self.is_mock[stage_name] = True
+        logger.info(f"Using DistanceMockModel (mock) for {stage_name}")
+
+    def set_stage_checkpoint(
+        self, stage: str, checkpoint_path: str | Path | None
+    ) -> dict[str, Any]:
+        """Loads a model checkpoint for a stage, or resets to DistanceMockModel."""
+        stage_name = stage.lower().strip()
+        if stage_name not in ["cross", "f2l", "oll", "pll"]:
+            raise ValueError(f"Unknown stage: {stage}")
+
+        if not checkpoint_path:
+            self.checkpoints[stage_name] = None
+        else:
+            p = Path(checkpoint_path)
+            if not p.is_file():
+                raise FileNotFoundError(
+                    f"Checkpoint file does not exist: {checkpoint_path}"
+                )
+            self.checkpoints[stage_name] = p
+
+        self._load_or_create_model(stage_name)
+        return self.get_state()
 
     def get_state(self) -> dict[str, Any]:
         """Returns the current cube state formatted for 3D visualization."""
@@ -203,20 +275,20 @@ class SolverAPI:
         faces = stickers_to_face_dict(stickers)
 
         # Stage goal status
-        flat_40 = torch.tensor(
-            to_flat(cp, co, ep, eo), dtype=torch.long, device=self.device
-        )
+        flat_pieces = to_flat(cp, co, ep, eo)
+        flat_46_np = np.concatenate([flat_pieces, centers], axis=-1)
+        flat_46 = torch.tensor(flat_46_np, dtype=torch.long, device=self.device)
         cross_solved = bool(
-            self.goal_checkers[Stage.CROSS].is_goal(flat_40)[0].item()
+            self.goal_checkers[Stage.CROSS].is_goal(flat_46)[0].item()
         )
         f2l_solved = bool(
-            self.goal_checkers[Stage.F2L].is_goal(flat_40)[0].item()
+            self.goal_checkers[Stage.F2L].is_goal(flat_46)[0].item()
         )
         oll_solved = bool(
-            self.goal_checkers[Stage.OLL].is_goal(flat_40)[0].item()
+            self.goal_checkers[Stage.OLL].is_goal(flat_46)[0].item()
         )
         pll_solved = bool(
-            self.goal_checkers[Stage.PLL].is_goal(flat_40)[0].item()
+            self.goal_checkers[Stage.PLL].is_goal(flat_46)[0].item()
         )
 
         return {
@@ -233,13 +305,20 @@ class SolverAPI:
             },
             "models": {
                 s: {
-                    "checkpoint": str(self.checkpoints[s])
-                    if self.checkpoints[s]
-                    else None,
-                    "is_heuristic": self.is_heuristic.get(s, True),
+                    "checkpoint": (
+                        str(self.checkpoints[s]).replace("\\", "/")
+                        if self.checkpoints[s]
+                        else None
+                    ),
+                    "is_mock": self.is_mock.get(s, True),
+                    "is_heuristic": self.is_mock.get(s, True),
+                    "available_checkpoints": self.get_available_checkpoints().get(
+                        s, []
+                    ),
                 }
                 for s in ["cross", "f2l", "oll", "pll"]
             },
+            "penalties": self.get_penalties_presets(),
         }
 
     def reset(self) -> dict[str, Any]:
@@ -277,22 +356,20 @@ class SolverAPI:
         return self.get_state()
 
     def precondition(self, stage: str) -> dict[str, Any]:
-        """Loads a state with the given stage completed (e.g. 'cross' -> Cross Done,
-        'f2l' -> F2L Done, 'oll' -> OLL Done, 'pll' -> Fully Solved).
+        """Loads a state with the given stage completed (e.g. 'cross' -> Cross,
+        'f2l' -> F2L, 'oll' -> OLL, 'pll' -> Fully Solved).
         """
         stage_enum = Stage(stage)
         spec = STAGES[stage_enum]
-        # Keep Cross on standard D face
-        fixed_face = "D" if stage_enum == Stage.CROSS else None
 
         states = sample_goal_states(
             spec=spec,
             n=1,
-            fixed_cross_face=fixed_face,
         )
         cp, co, ep, eo = from_flat(states)
+        centers = states[:, 40:46] if states.shape[-1] >= 46 else None
         self.env.reset()
-        self.env.load_state(cp, co, ep, eo)
+        self.env.load_state(cp, co, ep, eo, centers=centers)
         return self.get_state()
 
     def solve(
@@ -375,7 +452,7 @@ class SolverAPI:
             prefix_rotations: list[str] = []
             curr_pieces = initial_pieces.copy()
             c_tuple = tuple(int(c) for c in centers[0])
-            if c_tuple != (0, 1, 2, 3, 4, 5):
+            if stage_enum != Stage.CROSS and c_tuple != (0, 1, 2, 3, 4, 5):
                 prefix_rotations = get_restore_rotations(c_tuple)
                 if prefix_rotations:
                     rot_ops = TorchCubeOps(use_stm=True, device=self.device)

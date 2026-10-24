@@ -3,69 +3,16 @@ import torch
 
 from cubesight_ml.cube.layout import to_flat
 from cubesight_ml.cube.moves import (
-    CENTER_RESTORE_MAP,
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
-    get_restore_rotations,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.stages.goal_checker import StageGoalChecker
 
 
-def _build_restore_tables() -> tuple[
-    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
-]:
-    ops = TorchCubeOps(use_stm=True, device="cpu")
-    centers_list = list(CENTER_RESTORE_MAP.keys())
-    assert len(centers_list) == 24
-
-    weights = np.array([7776, 1296, 216, 36, 6, 1], dtype=np.int64)
-    lut = np.full(46656, -1, dtype=np.int64)
-    for idx, c in enumerate(centers_list):
-        h = int(np.sum(np.array(c, dtype=np.int64) * weights))
-        lut[h] = idx
-
-    id_state = torch.tensor(
-        list(range(8)) + [0] * 8 + list(range(12)) + [0] * 12,
-        dtype=torch.long,
-    ).unsqueeze(0)
-
-    restore_cp_24, restore_co_24, restore_ep_24, restore_eo_24 = [], [], [], []
-    for c_tuple in centers_list:
-        moves = get_restore_rotations(c_tuple)
-        curr = id_state
-        for m in moves:
-            curr = ops.apply_moves(
-                curr, torch.tensor([MOVE_TO_INDEX[m]], dtype=torch.long)
-            )
-        restore_cp_24.append(curr[0, 0:8].numpy())
-        restore_co_24.append(curr[0, 8:16].numpy())
-        restore_ep_24.append(curr[0, 16:28].numpy())
-        restore_eo_24.append(curr[0, 28:40].numpy())
-
-    return (
-        np.array(restore_cp_24, dtype=np.int64),
-        np.array(restore_co_24, dtype=np.int64),
-        np.array(restore_ep_24, dtype=np.int64),
-        np.array(restore_eo_24, dtype=np.int64),
-        lut,
-        weights,
-    )
-
-
-(
-    RESTORE_CP_24,
-    RESTORE_CO_24,
-    RESTORE_EP_24,
-    RESTORE_EO_24,
-    RESTORE_LUT,
-    RESTORE_WEIGHTS,
-) = _build_restore_tables()
-
-
 class BeamSearchRubiksCubeHandler:
-    """
-    Handles state conversion, transitions, and goal checking for BeamSearch on a specific CFOP stage.
+    """Handles state conversion, transitions, and goal checking for BeamSearch.
+
     Supports STM (54 moves with double turns and rotations) as well as HTM/QTM.
     """
 
@@ -90,24 +37,6 @@ class BeamSearchRubiksCubeHandler:
             use_double_moves=use_double_moves,
             include_rotations=include_rotations,
             device=self.device,
-        )
-        self.restore_cp = torch.tensor(
-            RESTORE_CP_24, dtype=torch.long, device=self.device
-        )
-        self.restore_co = torch.tensor(
-            RESTORE_CO_24, dtype=torch.long, device=self.device
-        )
-        self.restore_ep = torch.tensor(
-            RESTORE_EP_24, dtype=torch.long, device=self.device
-        )
-        self.restore_eo = torch.tensor(
-            RESTORE_EO_24, dtype=torch.long, device=self.device
-        )
-        self.lut = torch.tensor(
-            RESTORE_LUT, dtype=torch.long, device=self.device
-        )
-        self.weights = torch.tensor(
-            RESTORE_WEIGHTS, dtype=torch.long, device=self.device
         )
         self.canonical_centers = torch.tensor(
             [0, 1, 2, 3, 4, 5], dtype=torch.long, device=self.device
@@ -134,27 +63,6 @@ class BeamSearchRubiksCubeHandler:
     def state_to_model_input(
         self, states: torch.Tensor
     ) -> tuple[torch.Tensor, ...]:
-        if states.size(-1) >= 46:
-            c = states[:, 40:46]
-            h = (c * self.weights).sum(dim=-1)
-            c_ids = self.lut[h]
-            m_cp = self.restore_cp[c_ids]
-            m_co = self.restore_co[c_ids]
-            m_ep = self.restore_ep[c_ids]
-            m_eo = self.restore_eo[c_ids]
-            new_cp = torch.gather(states[:, 0:8], 1, m_cp)
-            new_co = (torch.gather(states[:, 8:16], 1, m_cp) + m_co) % 3
-            new_ep = torch.gather(states[:, 16:28], 1, m_ep)
-            new_eo = torch.bitwise_xor(
-                torch.gather(states[:, 28:40], 1, m_ep), m_eo
-            )
-            canonical_centers = self.canonical_centers.expand(
-                states.size(0), -1
-            )
-            reoriented = torch.cat(
-                [new_cp, new_co, new_ep, new_eo, canonical_centers], dim=1
-            )
-            return (reoriented,)
         return (states,)
 
     def state_from_env(

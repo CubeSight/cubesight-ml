@@ -61,21 +61,150 @@ function updateUIWithState(state) {
   if (!state) return;
   cube3D.updateColors(state.cubies);
 
-  // Update stage pills
+  // Update stage pills & solved text
   const status = state.status || {};
-  document.getElementById("pill-cross").className = "stage-pill" + (status.cross_solved ? " solved" : "");
-  document.getElementById("pill-f2l").className = "stage-pill" + (status.f2l_solved ? " solved" : "");
-  document.getElementById("pill-oll").className = "stage-pill" + (status.oll_solved ? " solved" : "");
-  document.getElementById("pill-pll").className = "stage-pill" + (status.pll_solved ? " solved" : "");
-
-  // Update model badges
-  const models = state.models || {};
-  for (const [s, m] of Object.entries(models)) {
-    const el = document.getElementById(`model-status-${s}`);
-    if (el) {
-      el.textContent = m.is_heuristic ? "Heuristic" : "Trained";
-      el.title = m.checkpoint || "Distance heuristic";
+  const setStagePill = (id, pillId, solved) => {
+    const pill = document.getElementById(pillId);
+    if (pill) pill.className = "stage-pill" + (solved ? " solved" : "");
+    const lbl = document.getElementById(id);
+    if (lbl) {
+      lbl.textContent = solved ? "Solved" : "Not Solved";
+      lbl.style.color = solved ? "#34d399" : "#a1a1aa";
     }
+  };
+  setStagePill("stage-status-cross", "pill-cross", status.cross_solved);
+  setStagePill("stage-status-f2l", "pill-f2l", status.f2l_solved);
+  setStagePill("stage-status-oll", "pill-oll", status.oll_solved);
+  setStagePill("stage-status-pll", "pill-pll", status.pll_solved);
+
+  // Update model badges & selectors
+  const models = state.models || {};
+  for (const s of ["cross", "f2l", "oll", "pll"]) {
+    const m = models[s] || {};
+    const isMock =
+      m.is_mock !== undefined
+        ? m.is_mock
+        : m.is_heuristic !== undefined
+        ? m.is_heuristic
+        : true;
+    const badge = document.getElementById(`model-status-${s}`);
+    if (badge) {
+      badge.textContent = isMock ? "Mock" : "Trained";
+      badge.className = "model-badge " + (isMock ? "mock" : "trained");
+      badge.title = m.checkpoint || "Distance mock model";
+    }
+    updateModelStageSelector(s, m);
+  }
+
+  // Update ergonomic penalties presets dropdown
+  if (state.penalties) {
+    updatePenaltiesSelect(state.penalties);
+  }
+}
+
+function updateModelStageSelector(stage, modelInfo) {
+  const select = document.getElementById(`model-select-${stage}`);
+  if (!select) return;
+
+  const currentCkpt = modelInfo.checkpoint || "";
+  const avail = modelInfo.available_checkpoints || [];
+
+  const currentOptions = Array.from(select.options).map((o) => o.value);
+  const targetOptions = ["", ...avail, "__custom__"];
+  const needsRebuild =
+    currentOptions.length !== targetOptions.length ||
+    !targetOptions.every((v, i) => currentOptions[i] === v);
+
+  if (needsRebuild) {
+    select.innerHTML = "";
+    // Mock option
+    const mockOpt = document.createElement("option");
+    mockOpt.value = "";
+    mockOpt.textContent = "Mock (No checkpoint)";
+    select.appendChild(mockOpt);
+
+    // Available checkpoints
+    avail.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      const parts = p.split(/[/\\]/);
+      const filename = parts.pop();
+      const parent = parts.pop() || "";
+      opt.textContent = parent ? `${filename} (${parent})` : filename;
+      select.appendChild(opt);
+    });
+
+    // Custom option
+    const customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "Custom path...";
+    select.appendChild(customOpt);
+  }
+
+  const customWrap = document.getElementById(`model-custom-wrap-${stage}`);
+  const customInput = document.getElementById(`model-input-${stage}`);
+
+  if (currentCkpt === "") {
+    select.value = "";
+    if (customWrap) customWrap.style.display = "none";
+  } else if (select.querySelector(`option[value="${CSS.escape(currentCkpt)}"]`)) {
+    select.value = currentCkpt;
+    if (customWrap) customWrap.style.display = "none";
+  } else {
+    // Checkpoint is custom
+    select.value = "__custom__";
+    if (customWrap) {
+      customWrap.style.display = "flex";
+      if (customInput && !customInput.matches(":focus")) {
+        customInput.value = currentCkpt;
+      }
+    }
+  }
+}
+
+async function loadModelCheckpoint(stage, checkpoint) {
+  setStatus(`Loading ${stage.toUpperCase()} model...`, "working");
+  try {
+    const state = await apiCall("/api/model", "POST", { stage, checkpoint });
+    updateUIWithState(state);
+    if (checkpoint) {
+      const filename = checkpoint.split(/[/\\]/).pop();
+      setStatus(`Loaded ${stage.toUpperCase()} model: ${filename}`);
+    } else {
+      setStatus(`Switched ${stage.toUpperCase()} to Mock model`);
+    }
+  } catch (err) {
+    setStatus(`Failed loading ${stage.toUpperCase()} model: ${err.message}`, "failed");
+  }
+}
+
+function updatePenaltiesSelect(penaltiesInfo) {
+  if (!penaltiesInfo || !penaltiesInfo.presets) return;
+  const select = document.getElementById("penalties-select");
+  if (!select) return;
+
+  const currentVal = select.value || penaltiesInfo.selected || "zero_penalties.json";
+  const existingOptions = Array.from(select.options).map((o) => o.value);
+  const presetsMatch =
+    existingOptions.length === penaltiesInfo.presets.length &&
+    existingOptions.every((val, idx) => val === penaltiesInfo.presets[idx]);
+
+  if (!presetsMatch) {
+    select.innerHTML = "";
+    penaltiesInfo.presets.forEach((preset) => {
+      const opt = document.createElement("option");
+      opt.value = preset;
+      if (preset === "zero_penalties.json") {
+        opt.textContent = "zero_penalties.json (Default: None / 0.0)";
+      } else {
+        opt.textContent = preset;
+      }
+      select.appendChild(opt);
+    });
+  }
+
+  if (select.querySelector(`option[value="${currentVal}"]`)) {
+    select.value = currentVal;
   }
 }
 
@@ -155,6 +284,9 @@ function initEventListeners() {
     const stage = document.getElementById("stage-select").value;
     const beamWidth = parseInt(document.getElementById("beam-width").value, 10) || 100;
     const maxSteps = parseInt(document.getElementById("max-steps").value, 10) || 40;
+    const penaltiesPreset = document.getElementById("penalties-select")
+      ? document.getElementById("penalties-select").value
+      : "zero_penalties.json";
 
     pausePlayback();
     setStatus(`Running Beam Search (${stage.toUpperCase()})...`, "working");
@@ -164,6 +296,7 @@ function initEventListeners() {
         stage,
         beam_width: beamWidth,
         max_steps: maxSteps,
+        move_penalties: penaltiesPreset,
       });
 
       if (result.success) {
@@ -185,6 +318,47 @@ function initEventListeners() {
   document.getElementById("btn-step-bwd").addEventListener("click", stepBackward);
   document.getElementById("btn-jump-start").addEventListener("click", jumpToStart);
   document.getElementById("btn-jump-end").addEventListener("click", jumpToEnd);
+
+  // Model checkpoint selectors
+  ["cross", "f2l", "oll", "pll"].forEach((stage) => {
+    const select = document.getElementById(`model-select-${stage}`);
+    const customWrap = document.getElementById(`model-custom-wrap-${stage}`);
+    const customInput = document.getElementById(`model-input-${stage}`);
+    const applyBtn = document.querySelector(`.btn-apply-model[data-stage="${stage}"]`);
+
+    if (select) {
+      select.addEventListener("change", async (e) => {
+        const val = e.target.value;
+        if (val === "__custom__") {
+          if (customWrap) {
+            customWrap.style.display = "flex";
+            if (customInput) customInput.focus();
+          }
+        } else {
+          if (customWrap) customWrap.style.display = "none";
+          await loadModelCheckpoint(stage, val || null);
+        }
+      });
+    }
+
+    const handleCustomSubmit = async () => {
+      const path = customInput ? customInput.value.trim() : "";
+      if (!path) {
+        setStatus("Please enter a checkpoint path", "failed");
+        return;
+      }
+      await loadModelCheckpoint(stage, path);
+    };
+
+    if (applyBtn) {
+      applyBtn.addEventListener("click", handleCustomSubmit);
+    }
+    if (customInput) {
+      customInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleCustomSubmit();
+      });
+    }
+  });
 }
 
 function clearSolution() {

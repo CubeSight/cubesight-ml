@@ -35,7 +35,7 @@ CROSS_FACE_MASKS: dict[str, np.ndarray] = {
 
 
 class Stage(StrEnum):
-    CROSS = "cross"  # Nothing -> Color-Neutral Cross (any of 6 faces)
+    CROSS = "cross"  # Nothing -> Cross on D
     F2L = "f2l"  # Cross   -> F2L (D-cross + 4 F2L slots)
     OLL = "oll"  # F2L     -> OLL (F2L + U face oriented)
     PLL = "pll"  # OLL     -> Solved
@@ -75,9 +75,7 @@ class StageSpec:
 # Specifications for each stage
 CROSS_SPEC = StageSpec(
     stage=Stage.CROSS,
-    custom_masks=tuple(
-        CROSS_FACE_MASKS[f] for f in ("D", "U", "F", "B", "L", "R")
-    ),
+    solved_edges=(4, 5, 6, 7),
     precondition=None,
 )
 

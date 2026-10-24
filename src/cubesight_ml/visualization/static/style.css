@@ -278,7 +278,7 @@ aside#stats-inspector {
   position: absolute;
   top: 80px;
   right: 20px;
-  width: 280px;
+  width: 310px;
   max-height: calc(100vh - 190px);
   background: var(--panel-bg);
   backdrop-filter: blur(16px);
@@ -334,6 +334,95 @@ aside#stats-inspector {
 
 .stage-pill.solved {
   border-left-color: var(--accent-emerald);
+}
+
+/* Model Checkpoints Section */
+.models-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-stage-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s;
+}
+
+.model-stage-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.model-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.model-stage-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.model-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.model-badge.mock {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.model-badge.trained {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.model-select {
+  font-size: 11px;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  width: 100%;
+  cursor: pointer;
+}
+
+.model-custom-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.model-custom-input {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  outline: none;
+}
+
+.btn-apply-model {
+  font-size: 11px;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
 
 /* Floating Bottom Playback Dock */

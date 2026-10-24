@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
-from cubesight_ml.stages.definitions import STAGES, Stage, StageSpec
+from cubesight_ml.stages.definitions import STAGES, StageSpec
 from cubesight_ml.stages.goal_checker import StageGoalChecker
 from cubesight_ml.stages.goal_sampler import sample_goal_states
 
@@ -31,23 +31,21 @@ def evaluate_stage(
     | None = None,
     verbose: bool = False,
 ) -> dict[str, Any]:
-    """
-    Evaluates stage solver on a fixed deterministic set of states drawn from the stage's precondition set.
+    """Evaluates stage solver on a fixed deterministic set of states.
 
     Returns:
-        Dictionary containing solve_rate, mean_length, mean_stm_length, mean_cost, max_length, mean_nodes, and per-state lengths.
+        Dictionary containing solve_rate, mean_length, mean_stm_length,
+        mean_cost, max_length, mean_nodes, and per-state lengths.
     """
     rng = np.random.default_rng(seed)
 
     precond_stage = spec.precondition
     precond_spec = None if precond_stage is None else STAGES[precond_stage]
 
-    fixed_cross_face = "D" if spec.stage == Stage.F2L else None
     val_states = sample_goal_states(
         precond_spec,
         n_states,
         rng=rng,
-        fixed_cross_face=fixed_cross_face,
     )
 
     checker = StageGoalChecker(spec, device=device)

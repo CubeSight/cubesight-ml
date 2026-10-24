@@ -27,6 +27,8 @@ class VisualizerHandler(SimpleHTTPRequestHandler):
             self._send_json(self.api.get_state())
         elif self.path == "/api/checkpoints":
             self._send_json(self.api.auto_discover_checkpoints())
+        elif self.path == "/api/presets":
+            self._send_json(self.api.get_penalties_presets())
         else:
             # Default static file handler
             super().do_GET()
@@ -71,6 +73,11 @@ class VisualizerHandler(SimpleHTTPRequestHandler):
                     max_steps=max_steps,
                     move_penalties=move_penalties,
                 )
+                self._send_json(res)
+            elif self.path == "/api/model":
+                stage = body.get("stage", "cross")
+                checkpoint = body.get("checkpoint")
+                res = self.api.set_stage_checkpoint(stage, checkpoint)
                 self._send_json(res)
             else:
                 self.send_response(404)
@@ -201,7 +208,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--move_penalties",
         type=str,
-        default="presets/ergonomic_penalties.json",
+        default="presets/zero_penalties.json",
         help="Path to JSON file or JSON string containing move execution penalties.",
     )
     parser.add_argument(

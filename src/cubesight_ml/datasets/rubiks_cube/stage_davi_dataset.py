@@ -14,9 +14,10 @@ from cubesight_ml.training.seeding import make_worker_init_fn
 
 
 class StageDAVIDataset(IterableDataset):
-    """
-    Iterable PyTorch dataset for DeepCubeA Value Iteration (DAVI) on sequential CFOP stages.
-    Yields batches of parents: Tensor (B, 40) int8, and depths: Tensor (B,) int16.
+    """Iterable PyTorch dataset for DAVI on CFOP stages.
+
+    Yields batches of parents: Tensor (B, 46) int8,
+    and depths: Tensor (B,) int16.
     """
 
     def __init__(
@@ -47,7 +48,8 @@ class StageDAVIDataset(IterableDataset):
 
         if not (0.0 <= precondition_fraction <= 1.0):
             raise ValueError(
-                f"precondition_fraction must be in [0.0, 1.0], got {precondition_fraction}"
+                "precondition_fraction must be in [0.0, 1.0], "
+                f"got {precondition_fraction}"
             )
 
         self.n_precond = round(self.precondition_fraction * self.batch_size)
@@ -86,7 +88,12 @@ class StageDAVIDataset(IterableDataset):
                     self.spec, self.n_scramble, rng=worker_rng
                 )
                 cp, co, ep, eo = from_flat(goal_states)
-                env.load_state(cp, co, ep, eo)
+                centers = (
+                    goal_states[:, 40:46]
+                    if goal_states.shape[-1] >= 46
+                    else None
+                )
+                env.load_state(cp, co, ep, eo, centers=centers)
 
                 # Generate per-sample scramble depths
                 if self.depth_sampling == "stratified":
@@ -103,10 +110,12 @@ class StageDAVIDataset(IterableDataset):
                     ).astype(np.int16)
 
                 env.scramble(depth=self.scramble_depth, depths=scramble_depths)
-                s_cp, s_co, s_ep, s_eo = env.get_state()
-                scrambled_parents = to_flat(s_cp, s_co, s_ep, s_eo)
+                s_cp, s_co, s_ep, s_eo, s_c = env.get_state_with_centers()
+                scrambled_parents = np.concatenate(
+                    [to_flat(s_cp, s_co, s_ep, s_eo), s_c], axis=-1
+                )
             else:
-                scrambled_parents = np.empty((0, 40), dtype=np.int8)
+                scrambled_parents = np.empty((0, 46), dtype=np.int8)
                 scramble_depths = np.empty(0, dtype=np.int16)
 
             # 2. Precondition set states (if mixing enabled)
@@ -116,14 +125,10 @@ class StageDAVIDataset(IterableDataset):
                     if self.spec.precondition is not None
                     else None
                 )
-                precond_fixed_face = (
-                    "D" if self.stage_enum == Stage.F2L else None
-                )
                 precond_parents = sample_goal_states(
                     precond_spec,
                     self.n_precond,
                     rng=worker_rng,
-                    fixed_cross_face=precond_fixed_face,
                 )
                 precond_depths = np.full(self.n_precond, -1, dtype=np.int16)
 

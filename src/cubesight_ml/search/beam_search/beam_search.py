@@ -55,6 +55,7 @@ class BeamSearch:
 
         # Parse execution penalties & compute step costs
         penalties_np = parse_move_penalties(move_penalties)
+        self.move_penalties = penalties_np
         if use_stm:
             base_costs_np = BASE_MOVE_COSTS_STM.copy()
         else:

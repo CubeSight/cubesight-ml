@@ -22,7 +22,7 @@ from cubesight_ml.stages.goal_sampler import (
 
 
 def _check_legal_cube_invariants(states: np.ndarray) -> None:
-    """Verifies that every state in states satisfies the Rubik's cube group invariants."""
+    """Verifies that every state in states satisfies Rubik's cube invariants."""
     n = len(states)
     cp = states[:, CP]
     co = states[:, 8:16]
@@ -37,15 +37,28 @@ def _check_legal_cube_invariants(states: np.ndarray) -> None:
         assert set(ep[i]) == set(range(12)), (
             f"Invalid edge permutation at index {i}"
         )
+        if states.shape[-1] >= 46:
+            assert set(states[i, 40:46]) == set(range(6)), (
+                f"Invalid center permutation at index {i}"
+            )
 
-    # 2. Matching parity
+    # 2. Matching total group parity
     cp_parities = _permutation_parities(cp)
     ep_parities = _permutation_parities(ep)
-    np.testing.assert_array_equal(
-        cp_parities,
-        ep_parities,
-        err_msg="Parity mismatch between corners and edges",
-    )
+    if states.shape[-1] >= 46:
+        c_parities = _permutation_parities(states[:, 40:46])
+        total_parities = cp_parities ^ ep_parities ^ c_parities
+        np.testing.assert_array_equal(
+            total_parities,
+            np.zeros(n),
+            err_msg="Total group parity not 0 mod 2",
+        )
+    else:
+        np.testing.assert_array_equal(
+            cp_parities,
+            ep_parities,
+            err_msg="Parity mismatch between corners and edges",
+        )
 
     # 3. Orientation conservation
     np.testing.assert_array_equal(
@@ -62,63 +75,60 @@ def _check_legal_cube_invariants(states: np.ndarray) -> None:
 
 def test_sample_goal_states_empty():
     states = sample_goal_states(CROSS_SPEC, 0)
-    assert states.shape == (0, 40)
+    assert states.shape == (0, 46)
 
 
 def test_sample_goal_states_none_precondition():
-    """Testing spec=None samples uniform legal cubes."""
+    """Testing spec=None samples uniform legal cubes across orientations."""
     rng = np.random.default_rng(123)
     states = sample_goal_states(None, 50, rng=rng)
-    assert states.shape == (50, 40)
+    assert states.shape == (50, 46)
     _check_legal_cube_invariants(states)
 
 
 def test_sample_goal_states_cross():
     rng = np.random.default_rng(456)
     states = sample_goal_states(CROSS_SPEC, 60, rng=rng)
-    assert states.shape == (60, 40)
+    assert states.shape == (60, 46)
     _check_legal_cube_invariants(states)
     assert is_goal_np(states, CROSS_SPEC).all()
 
     # Test fixed_cross_face="D"
     d_states = sample_goal_states(CROSS_SPEC, 30, rng=rng, fixed_cross_face="D")
+    assert d_states.shape == (30, 46)
     _check_legal_cube_invariants(d_states)
-    assert ((d_states == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
+    assert is_goal_np(d_states, CROSS_SPEC).all()
+    assert ((d_states[:, :40] == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
 
 
 def test_sample_goal_states_f2l():
     rng = np.random.default_rng(789)
     states = sample_goal_states(F2L_SPEC, 50, rng=rng)
-    assert states.shape == (50, 40)
+    assert states.shape == (50, 46)
     _check_legal_cube_invariants(states)
     assert is_goal_np(states, F2L_SPEC).all()
-
-    # D-cross and F2L pairs should be solved
-    assert (states[:, CP.start + 4 : CP.start + 8] == np.arange(4, 8)).all()
-    assert (states[:, 8 + 4 : 8 + 8] == 0).all()
-    assert (states[:, EP.start + 4 : EP.start + 12] == np.arange(4, 12)).all()
-    assert (states[:, EO.start + 4 : EO.start + 12] == 0).all()
 
 
 def test_sample_goal_states_oll():
     rng = np.random.default_rng(101)
     states = sample_goal_states(OLL_SPEC, 50, rng=rng)
-    assert states.shape == (50, 40)
+    assert states.shape == (50, 46)
     _check_legal_cube_invariants(states)
     assert is_goal_np(states, OLL_SPEC).all()
-
-    # All orientations must be 0
-    assert (states[:, 8:16] == 0).all()
-    assert (states[:, EO] == 0).all()
 
 
 def test_sample_goal_states_pll():
     rng = np.random.default_rng(202)
     states = sample_goal_states(PLL_SPEC, 20, rng=rng)
-    assert states.shape == (20, 40)
+    assert states.shape == (20, 46)
     _check_legal_cube_invariants(states)
     assert is_goal_np(states, PLL_SPEC).all()
-    assert (states == SOLVED_FLAT).all()
+
+    # Fixed canonical orientation yields SOLVED_FLAT
+    canonical_pll = sample_goal_states(
+        PLL_SPEC, 5, rng=rng, fixed_orientation=0
+    )
+    assert (canonical_pll[:, :40] == SOLVED_FLAT).all()
 
 
 def test_sample_diversity():
@@ -127,13 +137,11 @@ def test_sample_diversity():
     n = 100
     for stage_enum, spec in STAGES.items():
         states = sample_goal_states(spec, n, rng=rng)
-        # Count unique states
+        assert states.shape == (n, 46)
         unique_count = len(np.unique(states, axis=0))
         if stage_enum == "pll":
-            assert unique_count == 1
+            assert 1 <= unique_count <= 24
         elif stage_enum == "oll":
-            # For OLL (total set size 288), expected unique count for 100 draws is ~84.5
             assert unique_count >= 70
         else:
-            # CROSS (size ~2.28e14) and F2L (size 62,208) should have >= 90 unique items
             assert unique_count >= 90

@@ -1,14 +1,12 @@
 import pytest
 import torch
 
-from cubesight_ml.cube.layout import (
-    SOLVED_FLAT,
-)
 from cubesight_ml.datasets.rubiks_cube.stage_davi_dataset import (
     StageDAVIDataset,
     create_stage_davi_dataloader,
 )
-from cubesight_ml.stages.definitions import CROSS_FACE_MASKS
+from cubesight_ml.stages.definitions import STAGES, Stage
+from cubesight_ml.stages.goal_checker import is_goal_np
 
 
 @pytest.mark.parametrize("stage", ["cross", "f2l", "oll", "pll"])
@@ -28,7 +26,7 @@ def test_stage_davi_dataset_shapes_and_dtypes(stage: str):
 
     assert isinstance(parents, torch.Tensor)
     assert isinstance(depths, torch.Tensor)
-    assert parents.shape == (batch_size, 40)
+    assert parents.shape == (batch_size, 46)
     assert depths.shape == (batch_size,)
     assert parents.dtype == torch.int8
     assert depths.dtype == torch.int16
@@ -73,9 +71,9 @@ def test_stage_davi_dataset_precondition_mixing():
     # Expected count is round(0.35 * 100) = 35
     assert num_precond == 35
 
-    # For F2L, precondition states must have D-cross solved
+    # For F2L, precondition states must have Cross solved on their D face
     precond_parents_np = parents[precond_mask].numpy()
-    assert ((precond_parents_np == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
+    assert is_goal_np(precond_parents_np, STAGES[Stage.CROSS]).all()
 
 
 def test_stage_davi_dataloader_num_workers():
@@ -93,5 +91,5 @@ def test_stage_davi_dataloader_num_workers():
     loader_iter = iter(loader)
     for _ in range(3):
         parents, depths = next(loader_iter)
-        assert parents.shape == (batch_size, 40)
+        assert parents.shape == (batch_size, 46)
         assert depths.shape == (batch_size,)

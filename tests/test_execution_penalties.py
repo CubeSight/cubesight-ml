@@ -136,3 +136,26 @@ def test_beam_search_favors_lower_penalty_moves():
     # Rotations count as moves in Beam Search (base cost 1.0)
     x_idx = MOVE_TO_INDEX["x"]
     assert searcher.move_costs[x_idx].item() == pytest.approx(1.0)
+
+
+def test_zero_penalties_preset():
+    penalties = parse_move_penalties("zero_penalties.json")
+    assert penalties.shape == (54,)
+    assert np.all(penalties == 0.0)
+
+    # Bare beam search default is all zeros
+    checker = StageGoalChecker(PLL_SPEC, device="cpu")
+    handler = BeamSearchRubiksCubeHandler(
+        goal_checker=checker,
+        use_stm=True,
+        use_double_moves=True,
+        include_rotations=True,
+        device="cpu",
+    )
+    searcher = BeamSearch(
+        model=DistanceMockModel(PLL_SPEC),
+        puzzle_handler=handler,
+        use_stm=True,
+        device="cpu",
+    )
+    assert np.all(searcher.move_penalties == 0.0)

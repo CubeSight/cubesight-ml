@@ -127,13 +127,14 @@ class ResMLP(nn.Module):
         self.state_representation = state_representation
 
         if self.state_representation == "per_piece":
-            self.input_dim = 8 * 8 + 8 * 3 + 12 * 12 + 12 * 2  # 256
+            self.input_dim = 8 * 8 + 8 * 3 + 12 * 12 + 12 * 2 + 6 * 6  # 292
         elif self.state_representation == "per_sticker":
             self.input_dim = 54 * 6  # 324
             self.converter = RubiksStateConverter()
         else:
             raise ValueError(
-                "Invalid state_representation. Choose 'per_piece' or 'per_sticker'."
+                "Invalid state_representation. "
+                "Choose 'per_piece' or 'per_sticker'."
             )
 
         self.layer1 = nn.Sequential(
@@ -175,8 +176,25 @@ class ResMLP(nn.Module):
                 .to(torch.float32)
                 .flatten(start_dim=1)
             )
+            if x.size(1) >= 46:
+                centers = (
+                    F.one_hot(x[:, 40:46].long(), num_classes=6)
+                    .to(torch.float32)
+                    .flatten(start_dim=1)
+                )
+            else:
+                can = (
+                    torch.arange(6, dtype=torch.long, device=x.device)
+                    .unsqueeze(0)
+                    .expand(x.size(0), -1)
+                )
+                centers = (
+                    F.one_hot(can, num_classes=6)
+                    .to(torch.float32)
+                    .flatten(start_dim=1)
+                )
 
-            x = torch.cat([cp, co, ep, eo], dim=1)
+            x = torch.cat([cp, co, ep, eo, centers], dim=1)
 
         elif self.state_representation == "per_sticker":
             stickers = self.converter(x)

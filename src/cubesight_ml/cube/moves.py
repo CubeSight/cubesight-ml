@@ -445,6 +445,10 @@ def parse_move_penalties(
     data: dict[str, Any]
     if isinstance(penalties, str | Path):
         p_path = Path(penalties)
+        if not p_path.is_file():
+            preset_candidate = Path("presets") / penalties
+            if preset_candidate.is_file():
+                p_path = preset_candidate
         if p_path.is_file():
             with open(p_path, encoding="utf-8") as f:
                 data = json.load(f)

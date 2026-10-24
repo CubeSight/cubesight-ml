@@ -4,10 +4,10 @@
 
 const PALETTE = {
   0: 0xffffff, // White (U)
-  1: 0xdc2626, // Red (R)
+  1: 0x8b0000, // Red (R)
   2: 0x16a34a, // Green (F)
-  3: 0xfacc15, // Yellow (D)
-  4: 0xea580c, // Orange (L)
+  3: 0xffed29, // Yellow (D)
+  4: 0xffa759, // Orange (L)
   5: 0x2563eb, // Blue (B)
 };
 

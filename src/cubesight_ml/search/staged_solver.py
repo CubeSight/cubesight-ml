@@ -8,7 +8,6 @@ import torch.nn as nn
 
 from cubesight_ml.cube.layout import (
     FACE_TO_D_ROTATIONS,
-    SOLVED_FLAT,
     apply_cube_rotation,
 )
 from cubesight_ml.cube.moves import (
@@ -20,7 +19,6 @@ from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
 from cubesight_ml.stages.definitions import (
-    CROSS_FACE_MASKS,
     STAGES,
     Stage,
 )
@@ -233,7 +231,14 @@ class StagedSolver:
             all_moves.append(rot_idx)
 
         # Verify that D-cross is indeed now solved
-        assert ((curr_state[:40] == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
+        curr_t = torch.tensor(curr_state, dtype=torch.long, device=self.device)
+        if curr_t.ndim == 1:
+            curr_t = curr_t.unsqueeze(0)
+        assert (
+            self.searchers[Stage.CROSS]
+            .puzzle_handler.is_solved(curr_t)[0]
+            .item()
+        )
 
         # ------------------------------------------------------------------
         # Stages 3..5: F2L -> OLL -> PLL (in standard D/U-frame)

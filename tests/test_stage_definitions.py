@@ -96,7 +96,7 @@ def test_cross_faces_and_detection():
 
         # Reorienting this state using FACE_TO_D_ROTATIONS should make D-cross solved
         rot = FACE_TO_D_ROTATIONS[face]
-        reoriented = apply_cube_rotation(state, rot)
+        reoriented = apply_cube_rotation(state[:40], rot)
         assert ((reoriented == SOLVED_FLAT) | ~CROSS_FACE_MASKS["D"]).all()
 
 
@@ -137,3 +137,39 @@ def test_stage_goal_checker_pytorch():
         np_3d_res = is_goal_np(batch_3d_np, spec)
         torch_3d_res = checker.is_goal(batch_3d_t).numpy()
         np.testing.assert_array_equal(np_3d_res, torch_3d_res)
+
+
+def test_cross_on_d_and_rotations():
+    """Verify that CROSS_SPEC requires cross on D and respects rotations."""
+    from cubesight_ml.cube.moves import MOVE_TO_INDEX, ROTATION_MOVES
+    from cubesight_ml.cube.torch_ops import TorchCubeOps
+
+    checker = StageGoalChecker(CROSS_SPEC, device="cpu")
+    ops = TorchCubeOps(use_stm=True, include_rotations=True, device="cpu")
+
+    # 46-element solved state
+    state_46 = torch.tensor(
+        np.concatenate([SOLVED_FLAT, np.arange(6, dtype=np.int8)]),
+        dtype=torch.long,
+    ).unsqueeze(0)
+
+    # 1. Solved state satisfies D-cross
+    assert checker.is_goal(state_46).item() is True
+
+    # 2. All 24 whole-cube rotations of solved state remain valid D-crosses
+    for rot in ROTATION_MOVES:
+        m = torch.tensor([MOVE_TO_INDEX[rot]], dtype=torch.long)
+        rot_state = ops.apply_moves(state_46, m)
+        assert checker.is_goal(rot_state).item() is True, (
+            f"Failed for rotation {rot}"
+        )
+
+    # 3. State with cross on U but broken on D must NOT satisfy CROSS_SPEC
+    u_cross_state = state_46.clone()
+    u_cross_state[0, EP.start + 4] = 9  # break DF edge on D
+    assert checker.is_goal(u_cross_state).item() is False
+
+    # 4. Rotating u_cross_state via x2 places the solved U-cross on D -> True
+    m_x2 = torch.tensor([MOVE_TO_INDEX["x2"]], dtype=torch.long)
+    rotated_to_d = ops.apply_moves(u_cross_state, m_x2)
+    assert checker.is_goal(rotated_to_d).item() is True

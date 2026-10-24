@@ -46,6 +46,13 @@
         </select>
       </div>
 
+      <div class="form-group" style="margin-bottom:8px;">
+        <label for="penalties-select">Ergonomic Penalties</label>
+        <select id="penalties-select">
+          <option value="zero_penalties.json">zero_penalties.json (Default: None)</option>
+        </select>
+      </div>
+
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
         <div class="form-group">
           <label for="beam-width">Beam Width</label>
@@ -166,19 +173,82 @@
     <div class="stage-badge-list">
       <div id="pill-cross" class="stage-pill">
         <span>Cross Stage</span>
-        <span id="model-status-cross" style="font-size:10px; color:#a1a1aa;">-</span>
+        <span id="stage-status-cross" style="font-size:11px; color:#a1a1aa;">Not Solved</span>
       </div>
       <div id="pill-f2l" class="stage-pill">
         <span>F2L Stage</span>
-        <span id="model-status-f2l" style="font-size:10px; color:#a1a1aa;">-</span>
+        <span id="stage-status-f2l" style="font-size:11px; color:#a1a1aa;">Not Solved</span>
       </div>
       <div id="pill-oll" class="stage-pill">
         <span>OLL Stage</span>
-        <span id="model-status-oll" style="font-size:10px; color:#a1a1aa;">-</span>
+        <span id="stage-status-oll" style="font-size:11px; color:#a1a1aa;">Not Solved</span>
       </div>
       <div id="pill-pll" class="stage-pill">
         <span>PLL Stage</span>
-        <span id="model-status-pll" style="font-size:10px; color:#a1a1aa;">-</span>
+        <span id="stage-status-pll" style="font-size:11px; color:#a1a1aa;">Not Solved</span>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:12px;">Model Checkpoints</div>
+    <div class="models-config-list">
+      <!-- Cross -->
+      <div class="model-stage-card">
+        <div class="model-card-header">
+          <span class="model-stage-name">Cross</span>
+          <span id="model-status-cross" class="model-badge mock">Mock</span>
+        </div>
+        <select id="model-select-cross" class="model-select" data-stage="cross">
+          <option value="">Mock (No checkpoint)</option>
+        </select>
+        <div id="model-custom-wrap-cross" class="model-custom-wrap" style="display:none;">
+          <input type="text" id="model-input-cross" placeholder="path/to/checkpoint.pt" class="model-custom-input">
+          <button class="btn-secondary btn-apply-model" data-stage="cross">Load</button>
+        </div>
+      </div>
+
+      <!-- F2L -->
+      <div class="model-stage-card">
+        <div class="model-card-header">
+          <span class="model-stage-name">F2L</span>
+          <span id="model-status-f2l" class="model-badge mock">Mock</span>
+        </div>
+        <select id="model-select-f2l" class="model-select" data-stage="f2l">
+          <option value="">Mock (No checkpoint)</option>
+        </select>
+        <div id="model-custom-wrap-f2l" class="model-custom-wrap" style="display:none;">
+          <input type="text" id="model-input-f2l" placeholder="path/to/checkpoint.pt" class="model-custom-input">
+          <button class="btn-secondary btn-apply-model" data-stage="f2l">Load</button>
+        </div>
+      </div>
+
+      <!-- OLL -->
+      <div class="model-stage-card">
+        <div class="model-card-header">
+          <span class="model-stage-name">OLL</span>
+          <span id="model-status-oll" class="model-badge mock">Mock</span>
+        </div>
+        <select id="model-select-oll" class="model-select" data-stage="oll">
+          <option value="">Mock (No checkpoint)</option>
+        </select>
+        <div id="model-custom-wrap-oll" class="model-custom-wrap" style="display:none;">
+          <input type="text" id="model-input-oll" placeholder="path/to/checkpoint.pt" class="model-custom-input">
+          <button class="btn-secondary btn-apply-model" data-stage="oll">Load</button>
+        </div>
+      </div>
+
+      <!-- PLL -->
+      <div class="model-stage-card">
+        <div class="model-card-header">
+          <span class="model-stage-name">PLL</span>
+          <span id="model-status-pll" class="model-badge mock">Mock</span>
+        </div>
+        <select id="model-select-pll" class="model-select" data-stage="pll">
+          <option value="">Mock (No checkpoint)</option>
+        </select>
+        <div id="model-custom-wrap-pll" class="model-custom-wrap" style="display:none;">
+          <input type="text" id="model-input-pll" placeholder="path/to/checkpoint.pt" class="model-custom-input">
+          <button class="btn-secondary btn-apply-model" data-stage="pll">Load</button>
+        </div>
       </div>
     </div>
   </aside>

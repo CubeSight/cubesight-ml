@@ -102,7 +102,7 @@ def test_cube_stickers_remain_valid_after_moves():
         cubies = state["cubies"]
         assert len(cubies) == 27
 
-        color_counts = {c: 0 for c in range(6)}
+        color_counts = dict.fromkeys(range(6), 0)
         for c in cubies:
             x, y, z = c["x"], c["y"], c["z"]
             faces = c["faces"]
@@ -200,14 +200,19 @@ def test_visualizer_server_endpoints():
         server.shutdown()
 
 
-def test_solver_api_scramble_preserves_centers():
-    """Verify that api.scramble preserves canonical centers."""
+def test_solver_api_scramble_full_stm():
+    """Verify that api.scramble uses full STM and produces valid cube states."""
     import numpy as np
+
+    from cubesight_ml.cube.layout import SOLVED_FLAT
 
     api = SolverAPI(device="cpu")
     api.scramble(depth=20)
     cp, co, ep, eo, centers = api.env.get_state_with_centers()
-    assert np.array_equal(centers[0], np.arange(6))
+    # Scramble is non-trivial and produces valid orientations
+    assert np.sum(co[0]) % 3 == 0
+    assert np.sum(eo[0]) % 2 == 0
+    assert not np.array_equal(api.env.get_state()[0], SOLVED_FLAT[:8])
 
 
 def test_solver_api_solve_cross_matches_center():
@@ -236,7 +241,7 @@ def test_solver_api_solve_cross_matches_center():
 
 
 def test_solver_api_solve_rotated_cube():
-    """Verify that visualizer solve reorients rotated cube before solving."""
+    """Verify that visualizer solves cross on D for rotated cube."""
     import numpy as np
 
     api = SolverAPI(device="cpu")
@@ -244,7 +249,127 @@ def test_solver_api_solve_rotated_cube():
     _, _, _, _, centers = api.env.get_state_with_centers()
     assert not np.array_equal(centers[0], np.arange(6))
 
+    # With just 'x', Green cross is already formed on D
     res = api.solve(stage="cross", beam_width=50, max_steps=20)
     assert res["success"] is True
-    # The first move should be the restoring rotation x'
-    assert res["moves"][0] == "x'"
+    assert res["moves"] == []
+
+    # Break cross on D with 'D' move
+    api.apply_move("D")
+    res2 = api.solve(stage="cross", beam_width=50, max_steps=20)
+    assert res2["success"] is True
+    assert len(res2["moves"]) == 1
+    assert res2["moves"][0] in ["D'", "E"]
+
+
+def test_solver_api_default_zero_penalties_and_presets():
+    import numpy as np
+
+    api = SolverAPI(device="cpu")
+    # Default penalties must be all zeros
+    assert np.all(api.default_penalties == 0.0)
+
+    # Check presets
+    presets_info = api.get_penalties_presets()
+    assert "zero_penalties.json" in presets_info["presets"]
+    assert presets_info["selected"] == "zero_penalties.json"
+
+    # State should also contain penalties info
+    state = api.get_state()
+    assert "penalties" in state
+    assert state["penalties"]["selected"] == "zero_penalties.json"
+
+
+def test_visualizer_server_presets_and_solve():
+    api = SolverAPI(device="cpu")
+    server, url = start_server(api, host="127.0.0.1", port=0)
+    try:
+        # GET /api/presets
+        with urllib.request.urlopen(f"{url}/api/presets") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert "presets" in data
+            assert "zero_penalties.json" in data["presets"]
+            assert data["selected"] == "zero_penalties.json"
+
+        # POST /api/solve with preset
+        api.apply_move("R")
+        req = urllib.request.Request(
+            f"{url}/api/solve",
+            data=json.dumps(
+                {
+                    "stage": "pll",
+                    "beam_width": 10,
+                    "max_steps": 5,
+                    "move_penalties": "zero_penalties.json",
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            sol_data = json.loads(resp.read().decode("utf-8"))
+            assert sol_data["success"] is True
+            assert sol_data["moves"] == ["R'"]
+            assert sol_data["total_cost"] == 1.0
+    finally:
+        server.shutdown()
+
+
+def test_solver_api_defaults_to_mock_and_no_checkpoints():
+    api = SolverAPI(device="cpu")
+    state = api.get_state()
+    # Check that all stages default to mock and no checkpoint loaded
+    for s in ["cross", "f2l", "oll", "pll"]:
+        m = state["models"][s]
+        assert m["checkpoint"] is None
+        assert m["is_mock"] is True
+        assert m["is_heuristic"] is True
+
+
+def test_solver_api_set_stage_checkpoint():
+    from pathlib import Path
+
+    import pytest
+
+    api = SolverAPI(device="cpu")
+
+    # Invalid stage raises ValueError
+    with pytest.raises(ValueError):
+        api.set_stage_checkpoint("invalid_stage", "model.pt")
+
+    # Non-existent checkpoint raises FileNotFoundError
+    with pytest.raises(FileNotFoundError):
+        api.set_stage_checkpoint("cross", "non_existent_file.pt")
+
+    # Real checkpoint if present
+    candidate = Path("runs/davi/cross/20261024_164229_smoke_test/best_model.pt")
+    if candidate.is_file():
+        state = api.set_stage_checkpoint("cross", str(candidate))
+        assert state["models"]["cross"]["is_mock"] is False
+        assert state["models"]["cross"]["checkpoint"] is not None
+
+        # Reset to mock
+        state_mock = api.set_stage_checkpoint("cross", None)
+        assert state_mock["models"]["cross"]["is_mock"] is True
+        assert state_mock["models"]["cross"]["checkpoint"] is None
+
+
+def test_visualizer_server_model_endpoint():
+    api = SolverAPI(device="cpu")
+    server, url = start_server(api, host="127.0.0.1", port=0)
+    try:
+        # POST /api/model to reset/set stage checkpoint
+        req = urllib.request.Request(
+            f"{url}/api/model",
+            data=json.dumps({"stage": "cross", "checkpoint": None}).encode(
+                "utf-8"
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["models"]["cross"]["is_mock"] is True
+    finally:
+        server.shutdown()
