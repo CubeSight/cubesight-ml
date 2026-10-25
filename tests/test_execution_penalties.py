@@ -15,9 +15,7 @@ from cubesight_ml.stages.goal_checker import StageGoalChecker
 
 
 class DistanceMockModel(nn.Module):
-    """
-    Mock heuristic model that computes distance to the goal set by counting mismatched elements.
-    """
+    """Mock heuristic model that computes distance by counting mismatches."""
 
     def __init__(self, spec) -> None:
         super().__init__()
@@ -159,3 +157,70 @@ def test_zero_penalties_preset():
         device="cpu",
     )
     assert np.all(searcher.move_penalties == 0.0)
+
+
+def test_beam_search_uses_model_file_penalties_by_default(tmp_path):
+    from cubesight_ml.models.value_wrapper import build_model
+    from cubesight_ml.training.checkpointing import load_model_from_checkpoint
+
+    model_cfg = {
+        "state_representation": "per_sticker",
+        "n1": 32,
+        "n2": 32,
+        "n_r": 1,
+    }
+    model = build_model(model_cfg)
+    ckpt_file = tmp_path / "best_model.pt"
+    custom_penalties = {"U": 2.5, "R'": 1.5}
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "model_config": model_cfg,
+            "move_penalties": custom_penalties,
+        },
+        ckpt_file,
+    )
+
+    checker = StageGoalChecker(PLL_SPEC, device="cpu")
+    handler = BeamSearchRubiksCubeHandler(
+        goal_checker=checker,
+        use_stm=True,
+        use_double_moves=True,
+        include_rotations=True,
+        device="cpu",
+    )
+
+    # 1. Loading model object with attached checkpoint penalties
+    loaded_model = load_model_from_checkpoint(ckpt_file, device="cpu")
+    searcher1 = BeamSearch(
+        model=loaded_model,
+        puzzle_handler=handler,
+        use_stm=True,
+        device="cpu",
+    )
+    u_idx = MOVE_TO_INDEX["U"]
+    rp_idx = MOVE_TO_INDEX["R'"]
+    assert searcher1.move_penalties[u_idx] == pytest.approx(2.5)
+    assert searcher1.move_penalties[rp_idx] == pytest.approx(1.5)
+    assert searcher1.move_costs[u_idx].item() == pytest.approx(1.0 + 2.5)
+
+    # 2. Passing checkpoint path directly to BeamSearch
+    searcher2 = BeamSearch(
+        model=ckpt_file,
+        puzzle_handler=handler,
+        use_stm=True,
+        device="cpu",
+    )
+    assert searcher2.move_penalties[u_idx] == pytest.approx(2.5)
+    assert searcher2.move_penalties[rp_idx] == pytest.approx(1.5)
+
+    # 3. Explicit override should ignore model file penalties
+    searcher_override = BeamSearch(
+        model=loaded_model,
+        puzzle_handler=handler,
+        move_penalties="presets/zero_penalties.json",
+        use_stm=True,
+        device="cpu",
+    )
+    assert np.all(searcher_override.move_penalties == 0.0)
+    assert searcher_override.move_costs[u_idx].item() == pytest.approx(1.0)

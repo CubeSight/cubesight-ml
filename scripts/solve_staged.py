@@ -10,10 +10,8 @@ from loguru import logger
 
 from cubesight_ml.cube.layout import to_flat
 from cubesight_ml.envs.rubiks_cube import RubiksCubeEnv
-from cubesight_ml.models.value_wrapper import build_model
 from cubesight_ml.search.staged_solver import StagedSolver
 from cubesight_ml.stages.definitions import Stage
-from cubesight_ml.training.checkpointing import load_checkpoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -137,14 +135,9 @@ def parse_args() -> argparse.Namespace:
 def load_model_from_ckpt(
     ckpt_path: str | Path, device: torch.device
 ) -> torch.nn.Module:
-    ckpt = load_checkpoint(ckpt_path, device=device)
-    cfg = ckpt.get("model_config", {})
-    model = build_model(cfg).to(device)
-    sd = ckpt.get("model_state_dict", ckpt.get("target_model_state_dict", ckpt))
-    cleaned_sd = {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
-    model.load_state_dict(cleaned_sd)
-    model.eval()
-    return model
+    from cubesight_ml.training.checkpointing import load_model_from_checkpoint
+
+    return load_model_from_checkpoint(ckpt_path, device=device)
 
 
 def main() -> None:

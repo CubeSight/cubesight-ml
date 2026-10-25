@@ -76,7 +76,7 @@ class StagedSolver:
 
     def __init__(
         self,
-        models: dict[Stage | str, nn.Module],
+        models: dict[Stage | str, nn.Module | str | Path],
         beam_width: int | dict[Stage | str, int] = 30,
         max_steps: int | dict[Stage | str, int] = 30,
         use_stm: bool = True,
@@ -87,6 +87,7 @@ class StagedSolver:
         | torch.Tensor
         | str
         | Path
+        | dict[Stage | str, Any]
         | None = None,
         device: torch.device | str = "cpu",
         verbose: bool = False,

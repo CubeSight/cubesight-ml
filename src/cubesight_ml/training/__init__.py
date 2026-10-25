@@ -1,5 +1,7 @@
 from cubesight_ml.training.checkpointing import (
+    extract_model_penalties,
     load_checkpoint,
+    load_model_from_checkpoint,
     save_checkpoint_and_stats,
 )
 from cubesight_ml.training.davi import train_davi
@@ -31,8 +33,10 @@ __all__ = [
     "compute_davi_targets",
     "evaluate_stage",
     "extract_dataloader_config",
+    "extract_model_penalties",
     "is_json_serializable_primitive",
     "load_checkpoint",
+    "load_model_from_checkpoint",
     "make_worker_init_fn",
     "resolve_seeds",
     "save_checkpoint_and_stats",

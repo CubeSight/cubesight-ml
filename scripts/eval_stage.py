@@ -8,9 +8,8 @@ import numpy as np
 import torch
 from loguru import logger
 
-from cubesight_ml.models.value_wrapper import build_model
 from cubesight_ml.stages.definitions import STAGES, Stage
-from cubesight_ml.training.checkpointing import load_checkpoint
+from cubesight_ml.training.checkpointing import load_model_from_checkpoint
 from cubesight_ml.training.evaluation import evaluate_stage
 
 
@@ -103,29 +102,20 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(
-        f"Evaluating stage: {args.stage} | Checkpoint: {args.checkpoint} | Output: {output_dir}"
+        f"Evaluating stage: {args.stage} | Checkpoint: {args.checkpoint} | "
+        f"Output: {output_dir}"
     )
 
-    # 2. Load model from checkpoint
-    ckpt = load_checkpoint(args.checkpoint, device=device)
-    model_cfg = ckpt.get("model_config", {})
-    model = build_model(model_cfg).to(device)
-
-    state_dict = ckpt.get(
-        "model_state_dict", ckpt.get("target_model_state_dict", ckpt)
-    )
-    cleaned_sd = {
-        k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
-    }
-    model.load_state_dict(cleaned_sd)
-    model.eval()
+    # 2. Load model from checkpoint (attaches trained move_penalties)
+    model = load_model_from_checkpoint(args.checkpoint, device=device)
 
     stage_enum = Stage(args.stage)
     spec = STAGES[stage_enum]
 
     # 3. Run evaluation
     logger.info(
-        f"Running Beam Search with width={args.beam_width}, max_steps={args.max_steps} on {args.n_states} states..."
+        f"Running Beam Search with width={args.beam_width}, "
+        f"max_steps={args.max_steps} on {args.n_states} states..."
     )
     results = evaluate_stage(
         model=model,
@@ -187,7 +177,7 @@ def main() -> None:
         "include_rotations": include_rotations,
         "move_penalties": args.move_penalties,
         "device": str(device),
-        "model_config": model_cfg,
+        "model_config": getattr(model, "config", {}),
     }
     with open(output_dir / "config.json", "w", encoding="utf-8") as f:
         json.dump(config_dict, f, indent=2)

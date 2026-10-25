@@ -16,13 +16,13 @@ from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
 
 
 class BeamSearch:
-    """
-    Batched GPU/CPU Beam Search solver supporting STM, rotations, and configurable move execution penalties.
+    """Batched GPU/CPU Beam Search solver supporting STM, rotations, and
+    configurable move execution penalties.
     """
 
     def __init__(
         self,
-        model: nn.Module,
+        model: nn.Module | str | Path,
         puzzle_handler: BeamSearchRubiksCubeHandler,
         batch_size: int = 512,
         move_penalties: dict[str, float]
@@ -42,7 +42,14 @@ class BeamSearch:
         else:
             self.device = torch.device(device)
 
-        self.model = model.to(self.device)
+        if isinstance(model, str | Path):
+            from cubesight_ml.training.checkpointing import (
+                load_model_from_checkpoint,
+            )
+
+            self.model = load_model_from_checkpoint(model, device=self.device)
+        else:
+            self.model = model.to(self.device)
         self.model.eval()
 
         self.batch_size = batch_size
@@ -53,8 +60,16 @@ class BeamSearch:
         self.moves = puzzle_handler.get_moves().to(self.device)
         self.n_moves = self.moves.size(0)
 
-        # Parse execution penalties & compute step costs
-        penalties_np = parse_move_penalties(move_penalties)
+        # Default to ergonomic penalties inside model file if not specified
+        if move_penalties is None:
+            from cubesight_ml.training.checkpointing import (
+                extract_model_penalties,
+            )
+
+            penalties_np, _, _ = extract_model_penalties(self.model)
+        else:
+            penalties_np = parse_move_penalties(move_penalties)
+
         self.move_penalties = penalties_np
         if use_stm:
             base_costs_np = BASE_MOVE_COSTS_STM.copy()
@@ -209,8 +224,7 @@ class BeamSearch:
         beam_width: int,
         num_steps: int,
     ) -> tuple[list[int] | None, int, dict[str, Any]]:
-        """
-        Executes beam search from the given start state with move execution penalties.
+        """Executes beam search from the given start state with move penalties.
         Returns:
             (solution_moves, steps_taken, search_stats)
             solution_moves is None if search failed within num_steps.
@@ -268,9 +282,11 @@ class BeamSearch:
             stats["states_evaluated"] += ie
 
             if self.verbose and hasattr(steps_range, "set_description"):
-                steps_range.set_description(
-                    f"y_min={pred.min().item():.2f}, g_min={g_costs.min().item():.2f}"
+                desc_str = (
+                    f"y_min={pred.min().item():.2f}, "
+                    f"g_min={g_costs.min().item():.2f}"
                 )
+                steps_range.set_description(desc_str)
 
             tree_move[step, : states.size(0)] = moves.to(torch.int16)
             tree_idx[step, : states.size(0)] = idx.to(torch.int32)

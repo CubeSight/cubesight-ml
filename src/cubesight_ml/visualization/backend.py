@@ -1,4 +1,3 @@
-import json
 import time
 from pathlib import Path
 from typing import Any
@@ -15,13 +14,11 @@ from cubesight_ml.cube.layout import (
 from cubesight_ml.cube.moves import (
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
-    NUM_MOVES,
     get_restore_rotations,
     parse_move_penalties,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.envs.rubiks_cube import RubiksCubeEnv
-from cubesight_ml.models.value_wrapper import build_model
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
 from cubesight_ml.search.staged_solver import (
@@ -38,89 +35,15 @@ from cubesight_ml.stages.definitions import (
 )
 from cubesight_ml.stages.goal_checker import StageGoalChecker
 from cubesight_ml.stages.goal_sampler import sample_goal_states
-from cubesight_ml.training.checkpointing import load_checkpoint
+from cubesight_ml.training.checkpointing import (
+    extract_model_penalties,
+    load_model_from_checkpoint,
+)
 from cubesight_ml.visualization.cube_state import (
     get_cubies_representation,
     state_to_stickers,
     stickers_to_face_dict,
 )
-
-
-def extract_model_penalties(
-    ckpt_path: Path | str | None,
-) -> tuple[np.ndarray, str, dict[str, float]]:
-    """Extracts move execution penalties that a model was trained with.
-
-    Checks:
-    1. 'move_penalties' key inside the .pt checkpoint dictionary
-    2. 'move_penalties.json' in the checkpoint parent directory
-    3. 'config.json' in the checkpoint parent directory
-
-    Returns:
-        tuple of (penalties_array, preset_or_source_name, non_zero_dict)
-    """
-    zero_arr = np.zeros(NUM_MOVES, dtype=np.float32)
-    zero_res = (zero_arr, "zero_penalties.json", {})
-    if not ckpt_path:
-        return zero_res
-
-    p = Path(ckpt_path)
-    if not p.is_file():
-        return zero_res
-
-    penalties_arr = None
-    preset_name = None
-
-    # 1. Try reading checkpoint dictionary
-    try:
-        ckpt_data = load_checkpoint(p, device="cpu")
-        if "move_penalties" in ckpt_data and ckpt_data["move_penalties"]:
-            raw = ckpt_data["move_penalties"]
-            penalties_arr = parse_move_penalties(raw)
-            if isinstance(raw, str):
-                preset_name = Path(raw).name
-            else:
-                preset_name = "Trained Penalties"
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"Could not load penalties from checkpoint {p}: {e}")
-
-    # 2. Try reading move_penalties.json in parent dir
-    if penalties_arr is None or not np.any(penalties_arr > 0.0):
-        pen_file = p.parent / "move_penalties.json"
-        if pen_file.is_file():
-            try:
-                with open(pen_file, encoding="utf-8") as f:
-                    data = json.load(f)
-                penalties_arr = parse_move_penalties(data)
-                preset_name = "move_penalties.json"
-            except Exception as e:  # noqa: BLE001
-                logger.debug(f"Could not read {pen_file}: {e}")
-
-    # 3. Try reading config.json in parent dir
-    cfg_file = p.parent / "config.json"
-    if cfg_file.is_file():
-        try:
-            with open(cfg_file, encoding="utf-8") as f:
-                cfg = json.load(f)
-            if cfg.get("move_penalties"):
-                raw_cfg = cfg["move_penalties"]
-                if penalties_arr is None or not np.any(penalties_arr > 0.0):
-                    penalties_arr = parse_move_penalties(raw_cfg)
-                if isinstance(raw_cfg, str):
-                    preset_name = Path(raw_cfg).name
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Could not read {cfg_file}: {e}")
-
-    if penalties_arr is not None and np.any(penalties_arr > 0.0):
-        non_zero = {
-            INDEX_TO_MOVE[i]: float(penalties_arr[i])
-            for i in range(len(penalties_arr))
-            if penalties_arr[i] > 0.0
-        }
-        display_name = preset_name or f"Trained ({len(non_zero)} penalties)"
-        return penalties_arr, display_name, non_zero
-
-    return zero_res
 
 
 class DistanceMockModel(nn.Module):
@@ -310,25 +233,14 @@ class SolverAPI:
         ckpt_path = self.checkpoints.get(stage_name)
         if ckpt_path and ckpt_path.exists():
             try:
-                data = load_checkpoint(ckpt_path, device=self.device)
-                cfg = data.get("model_config", {})
-                if not cfg:
-                    cfg = {
-                        "type": "res_mlp",
-                        "state_dim": 40,
-                        "hidden_dim": 256,
-                        "num_layers": 4,
-                        "representation": "per_piece",
-                    }
-                model = build_model(cfg)
-                if data.get("model_state_dict"):
-                    model.load_state_dict(data["model_state_dict"])
-                model.to(self.device).eval()
+                model = load_model_from_checkpoint(
+                    ckpt_path, device=self.device
+                )
                 self.models[stage_name] = model
                 self.is_mock[stage_name] = False
 
                 # Extract model's trained ergonomic penalties
-                pen_arr, pen_name, pen_dict = extract_model_penalties(ckpt_path)
+                pen_arr, pen_name, pen_dict = extract_model_penalties(model)
                 self.model_penalties[stage_name] = pen_arr
                 self.model_penalties_name[stage_name] = pen_name
                 self.model_penalties_dict[stage_name] = pen_dict
