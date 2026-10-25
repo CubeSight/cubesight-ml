@@ -68,7 +68,9 @@ def analyze_dataset(filepath: str | Path) -> None:
     table.add_row("Total Solves", str(len(df)))
 
     if "is_valid_solution" in df.columns:
-        valid_count = df["is_valid_solution"].sum()
+        valid_count = int(
+            df["is_valid_solution"].fillna(False).astype(bool).sum()
+        )
         valid_rate = (valid_count / len(df)) * 100 if len(df) else 0
         table.add_row(
             "Simulator Verified Valid",

@@ -3,8 +3,11 @@ from cubesight_ml.datasets.reco_scraper import (
     RecoSolve,
     RecoStep,
     classify_cfop_stage,
+    compute_move_frequencies,
+    get_move_category,
     load_reconstructions,
     normalize_cube_move,
+    split_reconstructions,
     verify_solve_reconstruction,
 )
 from cubesight_ml.datasets.rubiks_cube.stage_davi_dataset import (
@@ -26,8 +29,11 @@ __all__ = [
     "RecoStep",
     "StageDAVIDataset",
     "classify_cfop_stage",
+    "compute_move_frequencies",
     "create_stage_davi_dataloader",
+    "get_move_category",
     "load_reconstructions",
     "normalize_cube_move",
+    "split_reconstructions",
     "verify_solve_reconstruction",
 ]

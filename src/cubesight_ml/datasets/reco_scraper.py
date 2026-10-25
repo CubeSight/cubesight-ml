@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -28,8 +29,12 @@ from cubesight_ml.cube.moves import (
     ALL_MOVES,
     CORNERS_FACES,
     EDGES_FACES,
+    FACE_MOVES,
     MOVE_TO_INDEX,
+    ROTATION_MOVES,
+    SLICE_MOVES,
     STICKER_MOVE_PERMS_54,
+    WIDE_MOVES,
 )
 
 if TYPE_CHECKING:
@@ -916,6 +921,193 @@ def load_reconstructions(filepath: Path | str) -> pd.DataFrame:
         return pd.DataFrame(records)
 
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return pd.read_csv(path, low_memory=False)
 
     raise ValueError(f"Unsupported file format: {path.suffix}")
+
+
+def split_reconstructions(
+    input_jsonl: str | Path,
+    input_csv: str | Path,
+    val_dir: str | Path,
+    test_dir: str | Path,
+    val_ratio: float = 2.0 / 3.0,
+    seed: int = 42,
+    val_prefix: str = "reco_cfop_val",
+    test_prefix: str = "reco_cfop_test",
+) -> tuple[dict[str, Path], pd.DataFrame, pd.DataFrame]:
+    """Split JSONL and CSV reconstructions datasets into val and test splits.
+
+    Args:
+        input_jsonl: Path to original JSONL file.
+        input_csv: Path to original CSV file.
+        val_dir: Destination directory for validation set.
+        test_dir: Destination directory for test set.
+        val_ratio: Fraction of dataset allocated to validation (default 2/3).
+        seed: Random seed for deterministic shuffling.
+        val_prefix: Base filename for validation files.
+        test_prefix: Base filename for test files.
+
+    Returns:
+        Tuple of (dict of output file paths, val DataFrame, test DataFrame).
+    """
+    jsonl_path = Path(input_jsonl)
+    csv_path = Path(input_csv)
+    val_dir_path = Path(val_dir)
+    test_dir_path = Path(test_dir)
+
+    if not jsonl_path.exists():
+        raise FileNotFoundError(f"Input JSONL file not found: {jsonl_path}")
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Input CSV file not found: {csv_path}")
+
+    val_dir_path.mkdir(parents=True, exist_ok=True)
+    test_dir_path.mkdir(parents=True, exist_ok=True)
+
+    with jsonl_path.open("r", encoding="utf-8") as f:
+        jsonl_lines = [line.strip() for line in f if line.strip()]
+
+    csv_df = pd.read_csv(csv_path, low_memory=False)
+
+    n_jsonl = len(jsonl_lines)
+    n_csv = len(csv_df)
+    if n_jsonl != n_csv:
+        raise ValueError(
+            f"Row count mismatch: JSONL has {n_jsonl} lines, CSV has {n_csv} rows."
+        )
+
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(n_jsonl)
+
+    n_val = round(n_jsonl * val_ratio)
+    val_indices = perm[:n_val]
+    test_indices = perm[n_val:]
+
+    val_lines = [jsonl_lines[i] for i in val_indices]
+    test_lines = [jsonl_lines[i] for i in test_indices]
+
+    val_df = csv_df.iloc[val_indices].reset_index(drop=True)
+    test_df = csv_df.iloc[test_indices].reset_index(drop=True)
+
+    val_jsonl_out = val_dir_path / f"{val_prefix}.jsonl"
+    val_csv_out = val_dir_path / f"{val_prefix}.csv"
+    test_jsonl_out = test_dir_path / f"{test_prefix}.jsonl"
+    test_csv_out = test_dir_path / f"{test_prefix}.csv"
+
+    with val_jsonl_out.open("w", encoding="utf-8") as f:
+        for line in val_lines:
+            f.write(line + "\n")
+
+    val_df.to_csv(val_csv_out, index=False)
+
+    with test_jsonl_out.open("w", encoding="utf-8") as f:
+        for line in test_lines:
+            f.write(line + "\n")
+
+    test_df.to_csv(test_csv_out, index=False)
+
+    paths = {
+        "val_jsonl": val_jsonl_out,
+        "val_csv": val_csv_out,
+        "test_jsonl": test_jsonl_out,
+        "test_csv": test_csv_out,
+    }
+    return paths, val_df, test_df
+
+
+def get_move_category(move: str) -> str:
+    """Classifies an STM move into Face, Slice, Wide, or Rotation."""
+    if move in FACE_MOVES:
+        return "Face"
+    if move in SLICE_MOVES:
+        return "Slice"
+    if move in WIDE_MOVES:
+        return "Wide"
+    if move in ROTATION_MOVES:
+        return "Rotation"
+    return "Other"
+
+
+def compute_move_frequencies(
+    dataset_path: str | Path,
+    include_inspection: bool = False,
+    valid_only: bool = False,
+) -> pd.DataFrame:
+    """Computes move frequency and percentage for all 54 STM moves in dataset solutions.
+
+    Args:
+        dataset_path: Path to dataset (.jsonl or .csv).
+        include_inspection: Whether to include moves from the inspection phase.
+        valid_only: Whether to only count moves from verified valid solutions.
+
+    Returns:
+        DataFrame containing columns:
+        ['move_index', 'move', 'category', 'count', 'frequency', 'percentage']
+        ordered by move_index matching ALL_MOVES.
+    """
+    path = Path(dataset_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {path}")
+
+    counter: Counter[str] = Counter()
+    all_moves_set = set(ALL_MOVES)
+
+    if path.suffix.lower() == ".jsonl":
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                data = json.loads(line)
+                if valid_only and data.get("is_valid_solution") is not True:
+                    continue
+                moves = data.get("solution_moves", [])
+                for m in moves:
+                    if m in all_moves_set:
+                        counter[m] += 1
+                if include_inspection:
+                    insp = data.get("stage_moves", {}).get("inspection", "")
+                    insp_tokens = (
+                        insp.split() if isinstance(insp, str) else insp
+                    )
+                    for m in insp_tokens:
+                        if m in all_moves_set:
+                            counter[m] += 1
+    elif path.suffix.lower() == ".csv":
+        df = pd.read_csv(path, low_memory=False)
+        if valid_only and "is_valid_solution" in df.columns:
+            df = df[df["is_valid_solution"].fillna(False).astype(bool)]
+        for _, row in df.iterrows():
+            sol_str = str(row.get("solution_moves", ""))
+            if sol_str and sol_str != "nan":
+                for m in sol_str.split():
+                    if m in all_moves_set:
+                        counter[m] += 1
+            if include_inspection:
+                insp_str = str(row.get("inspection", ""))
+                if insp_str and insp_str != "nan":
+                    for m in insp_str.split():
+                        if m in all_moves_set:
+                            counter[m] += 1
+    else:
+        raise ValueError(f"Unsupported file format: {path.suffix}")
+
+    total_moves = sum(counter.values())
+
+    records = []
+    for idx, move in enumerate(ALL_MOVES):
+        cnt = counter[move]
+        freq = (cnt / total_moves) if total_moves > 0 else 0.0
+        pct = freq * 100.0
+        records.append(
+            {
+                "move_index": idx,
+                "move": move,
+                "category": get_move_category(move),
+                "count": cnt,
+                "frequency": freq,
+                "percentage": pct,
+            }
+        )
+
+    return pd.DataFrame(records)

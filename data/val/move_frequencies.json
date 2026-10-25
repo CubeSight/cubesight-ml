@@ -1,0 +1,496 @@
+{
+  "dataset": "data\\val\\reco_cfop_val.jsonl",
+  "total_moves": 367986,
+  "include_inspection": false,
+  "valid_only": false,
+  "percentages": {
+    "U": 16.259,
+    "U2": 4.451,
+    "U'": 18.1031,
+    "D": 2.2512,
+    "D2": 0.728,
+    "D'": 1.6824,
+    "L": 3.926,
+    "L2": 0.4199,
+    "L'": 3.8164,
+    "R": 15.1316,
+    "R2": 2.952,
+    "R'": 16.1069,
+    "F": 3.077,
+    "F2": 0.1853,
+    "F'": 2.5341,
+    "B": 0.0919,
+    "B2": 0.0255,
+    "B'": 0.159,
+    "M": 0.0543,
+    "M2": 0.2867,
+    "M'": 0.2429,
+    "E": 0.0052,
+    "E2": 0.0,
+    "E'": 0.0109,
+    "S": 0.0239,
+    "S2": 0.0,
+    "S'": 0.0095,
+    "u": 0.1546,
+    "u2": 0.0049,
+    "u'": 0.2429,
+    "d": 0.3487,
+    "d2": 0.0003,
+    "d'": 0.2894,
+    "l": 0.2484,
+    "l2": 0.0473,
+    "l'": 0.2348,
+    "r": 0.8544,
+    "r2": 0.1614,
+    "r'": 1.0362,
+    "f": 0.0579,
+    "f2": 0.0003,
+    "f'": 0.0747,
+    "b": 0.0011,
+    "b2": 0.0,
+    "b'": 0.0016,
+    "x": 0.2275,
+    "x2": 0.013,
+    "x'": 0.3666,
+    "y": 1.1577,
+    "y2": 0.0652,
+    "y'": 1.8131,
+    "z": 0.0255,
+    "z2": 0.003,
+    "z'": 0.0359
+  },
+  "moves": [
+    {
+      "move_index": 0,
+      "move": "U",
+      "category": "Face",
+      "count": 59831,
+      "frequency": 0.16259042463571985,
+      "percentage": 16.259042463571983
+    },
+    {
+      "move_index": 1,
+      "move": "U2",
+      "category": "Face",
+      "count": 16379,
+      "frequency": 0.04450984548325208,
+      "percentage": 4.450984548325208
+    },
+    {
+      "move_index": 2,
+      "move": "U'",
+      "category": "Face",
+      "count": 66617,
+      "frequency": 0.1810313435837233,
+      "percentage": 18.10313435837233
+    },
+    {
+      "move_index": 3,
+      "move": "D",
+      "category": "Face",
+      "count": 8284,
+      "frequency": 0.022511725989575692,
+      "percentage": 2.2511725989575693
+    },
+    {
+      "move_index": 4,
+      "move": "D2",
+      "category": "Face",
+      "count": 2679,
+      "frequency": 0.007280168267271038,
+      "percentage": 0.7280168267271038
+    },
+    {
+      "move_index": 5,
+      "move": "D'",
+      "category": "Face",
+      "count": 6191,
+      "frequency": 0.016824009609061216,
+      "percentage": 1.6824009609061215
+    },
+    {
+      "move_index": 6,
+      "move": "L",
+      "category": "Face",
+      "count": 14447,
+      "frequency": 0.03925964574739257,
+      "percentage": 3.9259645747392566
+    },
+    {
+      "move_index": 7,
+      "move": "L2",
+      "category": "Face",
+      "count": 1545,
+      "frequency": 0.004198529291875234,
+      "percentage": 0.4198529291875234
+    },
+    {
+      "move_index": 8,
+      "move": "L'",
+      "category": "Face",
+      "count": 14044,
+      "frequency": 0.03816449538841152,
+      "percentage": 3.8164495388411517
+    },
+    {
+      "move_index": 9,
+      "move": "R",
+      "category": "Face",
+      "count": 55682,
+      "frequency": 0.1513155391781209,
+      "percentage": 15.131553917812091
+    },
+    {
+      "move_index": 10,
+      "move": "R2",
+      "category": "Face",
+      "count": 10863,
+      "frequency": 0.029520144788116938,
+      "percentage": 2.952014478811694
+    },
+    {
+      "move_index": 11,
+      "move": "R'",
+      "category": "Face",
+      "count": 59271,
+      "frequency": 0.16106862761083302,
+      "percentage": 16.106862761083303
+    },
+    {
+      "move_index": 12,
+      "move": "F",
+      "category": "Face",
+      "count": 11323,
+      "frequency": 0.030770192344273965,
+      "percentage": 3.0770192344273966
+    },
+    {
+      "move_index": 13,
+      "move": "F2",
+      "category": "Face",
+      "count": 682,
+      "frequency": 0.0018533313767371586,
+      "percentage": 0.18533313767371584
+    },
+    {
+      "move_index": 14,
+      "move": "F'",
+      "category": "Face",
+      "count": 9325,
+      "frequency": 0.02534063795905279,
+      "percentage": 2.534063795905279
+    },
+    {
+      "move_index": 15,
+      "move": "B",
+      "category": "Face",
+      "count": 338,
+      "frequency": 0.0009185132043066855,
+      "percentage": 0.09185132043066856
+    },
+    {
+      "move_index": 16,
+      "move": "B2",
+      "category": "Face",
+      "count": 94,
+      "frequency": 0.00025544450060600133,
+      "percentage": 0.025544450060600132
+    },
+    {
+      "move_index": 17,
+      "move": "B'",
+      "category": "Face",
+      "count": 585,
+      "frequency": 0.0015897343920692635,
+      "percentage": 0.15897343920692636
+    },
+    {
+      "move_index": 18,
+      "move": "M",
+      "category": "Slice",
+      "count": 200,
+      "frequency": 0.0005434989374595773,
+      "percentage": 0.05434989374595773
+    },
+    {
+      "move_index": 19,
+      "move": "M2",
+      "category": "Slice",
+      "count": 1055,
+      "frequency": 0.0028669568950992702,
+      "percentage": 0.286695689509927
+    },
+    {
+      "move_index": 20,
+      "move": "M'",
+      "category": "Slice",
+      "count": 894,
+      "frequency": 0.0024294402504443104,
+      "percentage": 0.24294402504443105
+    },
+    {
+      "move_index": 21,
+      "move": "E",
+      "category": "Slice",
+      "count": 19,
+      "frequency": 5.163239905865984e-05,
+      "percentage": 0.005163239905865984
+    },
+    {
+      "move_index": 22,
+      "move": "E2",
+      "category": "Slice",
+      "count": 0,
+      "frequency": 0.0,
+      "percentage": 0.0
+    },
+    {
+      "move_index": 23,
+      "move": "E'",
+      "category": "Slice",
+      "count": 40,
+      "frequency": 0.00010869978749191545,
+      "percentage": 0.010869978749191544
+    },
+    {
+      "move_index": 24,
+      "move": "S",
+      "category": "Slice",
+      "count": 88,
+      "frequency": 0.000239139532482214,
+      "percentage": 0.0239139532482214
+    },
+    {
+      "move_index": 25,
+      "move": "S2",
+      "category": "Slice",
+      "count": 0,
+      "frequency": 0.0,
+      "percentage": 0.0
+    },
+    {
+      "move_index": 26,
+      "move": "S'",
+      "category": "Slice",
+      "count": 35,
+      "frequency": 9.511231405542603e-05,
+      "percentage": 0.009511231405542603
+    },
+    {
+      "move_index": 27,
+      "move": "u",
+      "category": "Wide",
+      "count": 569,
+      "frequency": 0.0015462544770724973,
+      "percentage": 0.15462544770724973
+    },
+    {
+      "move_index": 28,
+      "move": "u2",
+      "category": "Wide",
+      "count": 18,
+      "frequency": 4.891490437136196e-05,
+      "percentage": 0.004891490437136195
+    },
+    {
+      "move_index": 29,
+      "move": "u'",
+      "category": "Wide",
+      "count": 894,
+      "frequency": 0.0024294402504443104,
+      "percentage": 0.24294402504443105
+    },
+    {
+      "move_index": 30,
+      "move": "d",
+      "category": "Wide",
+      "count": 1283,
+      "frequency": 0.0034865456838031883,
+      "percentage": 0.34865456838031883
+    },
+    {
+      "move_index": 31,
+      "move": "d2",
+      "category": "Wide",
+      "count": 1,
+      "frequency": 2.7174946872978864e-06,
+      "percentage": 0.00027174946872978866
+    },
+    {
+      "move_index": 32,
+      "move": "d'",
+      "category": "Wide",
+      "count": 1065,
+      "frequency": 0.0028941318419722487,
+      "percentage": 0.2894131841972249
+    },
+    {
+      "move_index": 33,
+      "move": "l",
+      "category": "Wide",
+      "count": 914,
+      "frequency": 0.0024837901441902683,
+      "percentage": 0.24837901441902682
+    },
+    {
+      "move_index": 34,
+      "move": "l2",
+      "category": "Wide",
+      "count": 174,
+      "frequency": 0.00047284407558983223,
+      "percentage": 0.04728440755898322
+    },
+    {
+      "move_index": 35,
+      "move": "l'",
+      "category": "Wide",
+      "count": 864,
+      "frequency": 0.0023479154098253736,
+      "percentage": 0.23479154098253735
+    },
+    {
+      "move_index": 36,
+      "move": "r",
+      "category": "Wide",
+      "count": 3144,
+      "frequency": 0.008543803296864555,
+      "percentage": 0.8543803296864555
+    },
+    {
+      "move_index": 37,
+      "move": "r2",
+      "category": "Wide",
+      "count": 594,
+      "frequency": 0.0016141918442549444,
+      "percentage": 0.16141918442549444
+    },
+    {
+      "move_index": 38,
+      "move": "r'",
+      "category": "Wide",
+      "count": 3813,
+      "frequency": 0.01036180724266684,
+      "percentage": 1.036180724266684
+    },
+    {
+      "move_index": 39,
+      "move": "f",
+      "category": "Wide",
+      "count": 213,
+      "frequency": 0.0005788263683944498,
+      "percentage": 0.05788263683944498
+    },
+    {
+      "move_index": 40,
+      "move": "f2",
+      "category": "Wide",
+      "count": 1,
+      "frequency": 2.7174946872978864e-06,
+      "percentage": 0.00027174946872978866
+    },
+    {
+      "move_index": 41,
+      "move": "f'",
+      "category": "Wide",
+      "count": 275,
+      "frequency": 0.0007473110390069187,
+      "percentage": 0.07473110390069188
+    },
+    {
+      "move_index": 42,
+      "move": "b",
+      "category": "Wide",
+      "count": 4,
+      "frequency": 1.0869978749191545e-05,
+      "percentage": 0.0010869978749191546
+    },
+    {
+      "move_index": 43,
+      "move": "b2",
+      "category": "Wide",
+      "count": 0,
+      "frequency": 0.0,
+      "percentage": 0.0
+    },
+    {
+      "move_index": 44,
+      "move": "b'",
+      "category": "Wide",
+      "count": 6,
+      "frequency": 1.630496812378732e-05,
+      "percentage": 0.001630496812378732
+    },
+    {
+      "move_index": 45,
+      "move": "x",
+      "category": "Rotation",
+      "count": 837,
+      "frequency": 0.0022745430532683307,
+      "percentage": 0.22745430532683306
+    },
+    {
+      "move_index": 46,
+      "move": "x2",
+      "category": "Rotation",
+      "count": 48,
+      "frequency": 0.00013043974499029855,
+      "percentage": 0.013043974499029855
+    },
+    {
+      "move_index": 47,
+      "move": "x'",
+      "category": "Rotation",
+      "count": 1349,
+      "frequency": 0.0036659003331648487,
+      "percentage": 0.3665900333164849
+    },
+    {
+      "move_index": 48,
+      "move": "y",
+      "category": "Rotation",
+      "count": 4260,
+      "frequency": 0.011576527367888995,
+      "percentage": 1.1576527367888996
+    },
+    {
+      "move_index": 49,
+      "move": "y2",
+      "category": "Rotation",
+      "count": 240,
+      "frequency": 0.0006521987249514927,
+      "percentage": 0.06521987249514927
+    },
+    {
+      "move_index": 50,
+      "move": "y'",
+      "category": "Rotation",
+      "count": 6672,
+      "frequency": 0.018131124553651498,
+      "percentage": 1.8131124553651499
+    },
+    {
+      "move_index": 51,
+      "move": "z",
+      "category": "Rotation",
+      "count": 94,
+      "frequency": 0.00025544450060600133,
+      "percentage": 0.025544450060600132
+    },
+    {
+      "move_index": 52,
+      "move": "z2",
+      "category": "Rotation",
+      "count": 11,
+      "frequency": 2.989244156027675e-05,
+      "percentage": 0.002989244156027675
+    },
+    {
+      "move_index": 53,
+      "move": "z'",
+      "category": "Rotation",
+      "count": 132,
+      "frequency": 0.000358709298723321,
+      "percentage": 0.0358709298723321
+    }
+  ]
+}
