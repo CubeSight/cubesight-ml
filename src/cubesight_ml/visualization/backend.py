@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from cubesight_ml.cube.layout import (
 from cubesight_ml.cube.moves import (
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
+    NUM_MOVES,
     get_restore_rotations,
     parse_move_penalties,
 )
@@ -42,6 +44,83 @@ from cubesight_ml.visualization.cube_state import (
     state_to_stickers,
     stickers_to_face_dict,
 )
+
+
+def extract_model_penalties(
+    ckpt_path: Path | str | None,
+) -> tuple[np.ndarray, str, dict[str, float]]:
+    """Extracts move execution penalties that a model was trained with.
+
+    Checks:
+    1. 'move_penalties' key inside the .pt checkpoint dictionary
+    2. 'move_penalties.json' in the checkpoint parent directory
+    3. 'config.json' in the checkpoint parent directory
+
+    Returns:
+        tuple of (penalties_array, preset_or_source_name, non_zero_dict)
+    """
+    zero_arr = np.zeros(NUM_MOVES, dtype=np.float32)
+    zero_res = (zero_arr, "zero_penalties.json", {})
+    if not ckpt_path:
+        return zero_res
+
+    p = Path(ckpt_path)
+    if not p.is_file():
+        return zero_res
+
+    penalties_arr = None
+    preset_name = None
+
+    # 1. Try reading checkpoint dictionary
+    try:
+        ckpt_data = load_checkpoint(p, device="cpu")
+        if "move_penalties" in ckpt_data and ckpt_data["move_penalties"]:
+            raw = ckpt_data["move_penalties"]
+            penalties_arr = parse_move_penalties(raw)
+            if isinstance(raw, str):
+                preset_name = Path(raw).name
+            else:
+                preset_name = "Trained Penalties"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Could not load penalties from checkpoint {p}: {e}")
+
+    # 2. Try reading move_penalties.json in parent dir
+    if penalties_arr is None or not np.any(penalties_arr > 0.0):
+        pen_file = p.parent / "move_penalties.json"
+        if pen_file.is_file():
+            try:
+                with open(pen_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                penalties_arr = parse_move_penalties(data)
+                preset_name = "move_penalties.json"
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Could not read {pen_file}: {e}")
+
+    # 3. Try reading config.json in parent dir
+    cfg_file = p.parent / "config.json"
+    if cfg_file.is_file():
+        try:
+            with open(cfg_file, encoding="utf-8") as f:
+                cfg = json.load(f)
+            if cfg.get("move_penalties"):
+                raw_cfg = cfg["move_penalties"]
+                if penalties_arr is None or not np.any(penalties_arr > 0.0):
+                    penalties_arr = parse_move_penalties(raw_cfg)
+                if isinstance(raw_cfg, str):
+                    preset_name = Path(raw_cfg).name
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Could not read {cfg_file}: {e}")
+
+    if penalties_arr is not None and np.any(penalties_arr > 0.0):
+        non_zero = {
+            INDEX_TO_MOVE[i]: float(penalties_arr[i])
+            for i in range(len(penalties_arr))
+            if penalties_arr[i] > 0.0
+        }
+        display_name = preset_name or f"Trained ({len(non_zero)} penalties)"
+        return penalties_arr, display_name, non_zero
+
+    return zero_res
 
 
 class DistanceMockModel(nn.Module):
@@ -74,10 +153,7 @@ class DistanceMockModel(nn.Module):
 
 
 class SolverAPI:
-    """
-    Core backend controller for the Rubik's Cube 3D visualizer.
-    Manages cube simulation, checkpoint loading, and Beam Search solving.
-    """
+    """Core backend controller for the Rubik's Cube 3D visualizer."""
 
     def __init__(
         self,
@@ -115,6 +191,27 @@ class SolverAPI:
             else "presets/zero_penalties.json"
         )
         self.default_penalties = parse_move_penalties(self.move_penalties_cfg)
+
+        self.model_penalties: dict[str, np.ndarray] = {
+            s: self.default_penalties.copy()
+            for s in ["cross", "f2l", "oll", "pll"]
+        }
+        self.model_penalties_name: dict[str, str] = {
+            s: (
+                Path(self.move_penalties_cfg).name
+                if isinstance(self.move_penalties_cfg, str)
+                else "zero_penalties.json"
+            )
+            for s in ["cross", "f2l", "oll", "pll"]
+        }
+        self.model_penalties_dict: dict[str, dict[str, float]] = {
+            s: {
+                INDEX_TO_MOVE[i]: float(self.model_penalties[s][i])
+                for i in range(len(self.model_penalties[s]))
+                if self.model_penalties[s][i] > 0.0
+            }
+            for s in ["cross", "f2l", "oll", "pll"]
+        }
 
         self.goal_checkers = {
             Stage.CROSS: StageGoalChecker(CROSS_SPEC, device=self.device),
@@ -229,8 +326,16 @@ class SolverAPI:
                 model.to(self.device).eval()
                 self.models[stage_name] = model
                 self.is_mock[stage_name] = False
+
+                # Extract model's trained ergonomic penalties
+                pen_arr, pen_name, pen_dict = extract_model_penalties(ckpt_path)
+                self.model_penalties[stage_name] = pen_arr
+                self.model_penalties_name[stage_name] = pen_name
+                self.model_penalties_dict[stage_name] = pen_dict
+
                 logger.info(
-                    f"Loaded trained model for {stage_name} from {ckpt_path}"
+                    f"Loaded trained model for {stage_name} from {ckpt_path} "
+                    f"with penalties '{pen_name}' ({len(pen_dict)} penalties)"
                 )
                 return
             except Exception as e:  # noqa: BLE001
@@ -244,12 +349,23 @@ class SolverAPI:
         mock = DistanceMockModel(spec).to(self.device).eval()
         self.models[stage_name] = mock
         self.is_mock[stage_name] = True
+        self.model_penalties[stage_name] = self.default_penalties.copy()
+        self.model_penalties_name[stage_name] = (
+            Path(self.move_penalties_cfg).name
+            if isinstance(self.move_penalties_cfg, str)
+            else "zero_penalties.json"
+        )
+        self.model_penalties_dict[stage_name] = {
+            INDEX_TO_MOVE[i]: float(self.model_penalties[stage_name][i])
+            for i in range(len(self.model_penalties[stage_name]))
+            if self.model_penalties[stage_name][i] > 0.0
+        }
         logger.info(f"Using DistanceMockModel (mock) for {stage_name}")
 
     def set_stage_checkpoint(
         self, stage: str, checkpoint_path: str | Path | None
     ) -> dict[str, Any]:
-        """Loads a model checkpoint for a stage, or resets to DistanceMockModel."""
+        """Loads a model checkpoint for a stage or resets to mock."""
         stage_name = stage.lower().strip()
         if stage_name not in ["cross", "f2l", "oll", "pll"]:
             raise ValueError(f"Unknown stage: {stage}")
@@ -291,6 +407,21 @@ class SolverAPI:
             self.goal_checkers[Stage.PLL].is_goal(flat_46)[0].item()
         )
 
+        stage_penalties_info = {
+            s: {
+                "name": self.model_penalties_name[s],
+                "has_penalties": bool(np.any(self.model_penalties[s] > 0.0)),
+                "num_penalties": len(self.model_penalties_dict[s]),
+                "penalties": self.model_penalties_dict[s],
+            }
+            for s in ["cross", "f2l", "oll", "pll"]
+        }
+
+        penalties_presets = self.get_penalties_presets()
+        selected_preset = self.model_penalties_name.get(
+            "cross", penalties_presets.get("selected", "zero_penalties.json")
+        )
+
         return {
             "stickers": stickers,
             "faces": faces,
@@ -312,13 +443,22 @@ class SolverAPI:
                     ),
                     "is_mock": self.is_mock.get(s, True),
                     "is_heuristic": self.is_mock.get(s, True),
-                    "available_checkpoints": self.get_available_checkpoints().get(
-                        s, []
+                    "available_checkpoints": (
+                        self.get_available_checkpoints().get(s, [])
                     ),
+                    "penalties_name": self.model_penalties_name[s],
+                    "has_penalties": bool(
+                        np.any(self.model_penalties[s] > 0.0)
+                    ),
+                    "num_penalties": len(self.model_penalties_dict[s]),
                 }
                 for s in ["cross", "f2l", "oll", "pll"]
             },
-            "penalties": self.get_penalties_presets(),
+            "penalties": {
+                "by_stage": stage_penalties_info,
+                "presets": penalties_presets.get("presets", []),
+                "selected": selected_preset,
+            },
         }
 
     def reset(self) -> dict[str, Any]:
@@ -377,17 +517,28 @@ class SolverAPI:
         stage: str = "all",
         beam_width: int = 100,
         max_steps: int = 40,
-        move_penalties: str | dict | None = None,
+        move_penalties: str | dict | np.ndarray | None = None,
     ) -> dict[str, Any]:
+        """Runs Beam Search inference for stage or whole 4-stage pipeline.
+
+        Uses the ergonomic penalties the chosen model(s) were trained with,
+        unless explicitly passed as a separate parameter outside of the GUI.
         """
-        Runs Beam Search inference for the requested stage or the whole 4-stage CFOP pipeline.
-        Returns solution moves, metrics, and intermediate states after each move for 3D animation.
-        """
-        penalties = (
-            parse_move_penalties(move_penalties)
-            if move_penalties is not None
-            else self.default_penalties
-        )
+        # Resolve penalties: explicit parameter takes priority (outside GUI)
+        if move_penalties is not None:
+            penalties: Any = parse_move_penalties(move_penalties)
+        elif stage == "all":
+            penalties = {
+                Stage.CROSS: self.model_penalties["cross"],
+                Stage.F2L: self.model_penalties["f2l"],
+                Stage.OLL: self.model_penalties["oll"],
+                Stage.PLL: self.model_penalties["pll"],
+            }
+        else:
+            stage_name = stage.lower().strip()
+            penalties = self.model_penalties.get(
+                stage_name, self.default_penalties
+            )
 
         cp, co, ep, eo, centers = self.env.get_state_with_centers()
         initial_pieces = to_flat(cp, co, ep, eo)

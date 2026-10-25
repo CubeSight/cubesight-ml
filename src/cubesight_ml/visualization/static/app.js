@@ -8,6 +8,7 @@ let currentStep = 0;
 let isPlaying = false;
 let playTimer = null;
 let moveSpeedMs = 300;
+let latestState = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("canvas-container");
@@ -59,6 +60,7 @@ async function fetchInitialState() {
 
 function updateUIWithState(state) {
   if (!state) return;
+  latestState = state;
   cube3D.updateColors(state.cubies);
 
   // Update stage pills & solved text
@@ -96,10 +98,8 @@ function updateUIWithState(state) {
     updateModelStageSelector(s, m);
   }
 
-  // Update ergonomic penalties presets dropdown
-  if (state.penalties) {
-    updatePenaltiesSelect(state.penalties);
-  }
+  // Update ergonomic penalties display based on active stage mode & model(s)
+  updatePenaltiesDisplay();
 }
 
 function updateModelStageSelector(stage, modelInfo) {
@@ -160,6 +160,19 @@ function updateModelStageSelector(stage, modelInfo) {
       }
     }
   }
+
+  // Update penalties note on stage card
+  const penNote = document.getElementById(`model-penalties-${stage}`);
+  if (penNote) {
+    if (modelInfo.has_penalties) {
+      const penCount = modelInfo.num_penalties || 0;
+      penNote.textContent = `Penalties: ${modelInfo.penalties_name} (${penCount})`;
+      penNote.classList.add("active");
+    } else {
+      penNote.textContent = "Penalties: None (0.0)";
+      penNote.classList.remove("active");
+    }
+  }
 }
 
 async function loadModelCheckpoint(stage, checkpoint) {
@@ -178,37 +191,62 @@ async function loadModelCheckpoint(stage, checkpoint) {
   }
 }
 
-function updatePenaltiesSelect(penaltiesInfo) {
-  if (!penaltiesInfo || !penaltiesInfo.presets) return;
-  const select = document.getElementById("penalties-select");
-  if (!select) return;
+function updatePenaltiesDisplay() {
+  if (!latestState) return;
+  const stageSelect = document.getElementById("stage-select");
+  const selectedStage = stageSelect ? stageSelect.value : "all";
+  const penaltiesSelect = document.getElementById("penalties-select");
+  const detail = document.getElementById("penalties-detail");
 
-  const currentVal = select.value || penaltiesInfo.selected || "zero_penalties.json";
-  const existingOptions = Array.from(select.options).map((o) => o.value);
-  const presetsMatch =
-    existingOptions.length === penaltiesInfo.presets.length &&
-    existingOptions.every((val, idx) => val === penaltiesInfo.presets[idx]);
+  if (!penaltiesSelect) return;
 
-  if (!presetsMatch) {
-    select.innerHTML = "";
-    penaltiesInfo.presets.forEach((preset) => {
-      const opt = document.createElement("option");
-      opt.value = preset;
-      if (preset === "zero_penalties.json") {
-        opt.textContent = "zero_penalties.json (Default: None / 0.0)";
-      } else {
-        opt.textContent = preset;
+  if (selectedStage === "all") {
+    const byStage = latestState.penalties?.by_stage || {};
+    const stagesWithPen = Object.entries(byStage).filter(
+      ([_, info]) => info.has_penalties
+    );
+
+    if (stagesWithPen.length > 0) {
+      const summary = stagesWithPen
+        .map(([s, info]) => `${s.toUpperCase()}: ${info.name}`)
+        .join(", ");
+      penaltiesSelect.innerHTML = `<option value="">Per-stage model (${summary})</option>`;
+      if (detail) {
+        detail.textContent = "Using each stage model's trained penalties during pipeline solve.";
       }
-      select.appendChild(opt);
-    });
-  }
-
-  if (select.querySelector(`option[value="${currentVal}"]`)) {
-    select.value = currentVal;
+    } else {
+      penaltiesSelect.innerHTML = '<option value="">All stages: None (zero_penalties.json)</option>';
+      if (detail) {
+        detail.textContent = "No move penalties trained on active models.";
+      }
+    }
+  } else {
+    const stageInfo = latestState.penalties?.by_stage?.[selectedStage] || {};
+    const name = stageInfo.name || "zero_penalties.json";
+    const numPen = stageInfo.num_penalties || 0;
+    if (numPen > 0) {
+      penaltiesSelect.innerHTML = `<option value="">${name} (${numPen} penalties)</option>`;
+      if (detail) {
+        detail.textContent = `Using trained penalties for ${selectedStage.toUpperCase()} model.`;
+      }
+    } else {
+      penaltiesSelect.innerHTML = `<option value="">${name} (None / 0.0)</option>`;
+      if (detail) {
+        detail.textContent = `No move penalties trained for ${selectedStage.toUpperCase()} model.`;
+      }
+    }
   }
 }
 
 function initEventListeners() {
+  // Stage select listener to update model penalties display
+  const stageSelect = document.getElementById("stage-select");
+  if (stageSelect) {
+    stageSelect.addEventListener("change", () => {
+      updatePenaltiesDisplay();
+    });
+  }
+
   // Speed slider
   const speedSlider = document.getElementById("speed-slider");
   speedSlider.addEventListener("input", (e) => {
@@ -284,9 +322,6 @@ function initEventListeners() {
     const stage = document.getElementById("stage-select").value;
     const beamWidth = parseInt(document.getElementById("beam-width").value, 10) || 100;
     const maxSteps = parseInt(document.getElementById("max-steps").value, 10) || 40;
-    const penaltiesPreset = document.getElementById("penalties-select")
-      ? document.getElementById("penalties-select").value
-      : "zero_penalties.json";
 
     pausePlayback();
     setStatus(`Running Beam Search (${stage.toUpperCase()})...`, "working");
@@ -296,7 +331,6 @@ function initEventListeners() {
         stage,
         beam_width: beamWidth,
         max_steps: maxSteps,
-        move_penalties: penaltiesPreset,
       });
 
       if (result.success) {

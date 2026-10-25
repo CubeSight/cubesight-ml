@@ -261,6 +261,7 @@ def train_davi(
                         cumulative_flops=cumulative_flops,
                         cumulative_flops_active=cumulative_flops_active,
                         cumulative_flops_target=cumulative_flops_target,
+                        move_penalties=move_penalties,
                     )
 
                 # 5. Target Network Sync Policy Check
@@ -343,6 +344,7 @@ def train_davi(
                                 sync_policy_state=sync_policy.state_dict(),
                                 num_syncs=getattr(sync_policy, "num_syncs", 0),
                                 eval_metrics=eval_res,
+                                move_penalties=move_penalties,
                             )
 
             # Periodic standalone evaluation (if not synced)
@@ -402,6 +404,7 @@ def train_davi(
                     cumulative_flops=cumulative_flops,
                     cumulative_flops_active=cumulative_flops_active,
                     cumulative_flops_target=cumulative_flops_target,
+                    move_penalties=move_penalties,
                 )
 
         logger.info(f"Training successfully completed {steps} steps.")
@@ -423,6 +426,7 @@ def train_davi(
             model_config=model_config,
             sync_policy_state=sync_policy.state_dict(),
             num_syncs=getattr(sync_policy, "num_syncs", 0),
+            move_penalties=move_penalties,
         )
 
     except KeyboardInterrupt:
@@ -446,6 +450,7 @@ def train_davi(
             model_config=model_config,
             sync_policy_state=sync_policy.state_dict(),
             num_syncs=getattr(sync_policy, "num_syncs", 0),
+            move_penalties=move_penalties,
         )
     finally:
         writer.flush()

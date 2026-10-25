@@ -425,6 +425,20 @@ aside#stats-inspector {
   white-space: nowrap;
 }
 
+.model-penalties-note {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-penalties-note.active {
+  color: #38bdf8;
+  font-weight: 500;
+}
+
 /* Floating Bottom Playback Dock */
 footer#playback-dock {
   position: absolute;

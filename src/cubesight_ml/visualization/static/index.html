@@ -47,10 +47,14 @@
       </div>
 
       <div class="form-group" style="margin-bottom:8px;">
-        <label for="penalties-select">Ergonomic Penalties</label>
-        <select id="penalties-select">
-          <option value="zero_penalties.json">zero_penalties.json (Default: None)</option>
+        <label for="penalties-select">
+          Ergonomic Penalties
+          <span style="font-size:10px; font-weight:normal; color:#a1a1aa;">(From chosen model)</span>
+        </label>
+        <select id="penalties-select" disabled style="opacity: 0.85; cursor: not-allowed; background: rgba(0, 0, 0, 0.4);">
+          <option value="">Derived from chosen model</option>
         </select>
+        <div id="penalties-detail" style="font-size:10px; color:#71717a; margin-top:2px;">Using model's trained penalties</div>
       </div>
 
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
@@ -204,6 +208,7 @@
           <input type="text" id="model-input-cross" placeholder="path/to/checkpoint.pt" class="model-custom-input">
           <button class="btn-secondary btn-apply-model" data-stage="cross">Load</button>
         </div>
+        <div id="model-penalties-cross" class="model-penalties-note">Penalties: None (0.0)</div>
       </div>
 
       <!-- F2L -->
@@ -219,6 +224,7 @@
           <input type="text" id="model-input-f2l" placeholder="path/to/checkpoint.pt" class="model-custom-input">
           <button class="btn-secondary btn-apply-model" data-stage="f2l">Load</button>
         </div>
+        <div id="model-penalties-f2l" class="model-penalties-note">Penalties: None (0.0)</div>
       </div>
 
       <!-- OLL -->
@@ -234,6 +240,7 @@
           <input type="text" id="model-input-oll" placeholder="path/to/checkpoint.pt" class="model-custom-input">
           <button class="btn-secondary btn-apply-model" data-stage="oll">Load</button>
         </div>
+        <div id="model-penalties-oll" class="model-penalties-note">Penalties: None (0.0)</div>
       </div>
 
       <!-- PLL -->
@@ -249,6 +256,7 @@
           <input type="text" id="model-input-pll" placeholder="path/to/checkpoint.pt" class="model-custom-input">
           <button class="btn-secondary btn-apply-model" data-stage="pll">Load</button>
         </div>
+        <div id="model-penalties-pll" class="model-penalties-note">Penalties: None (0.0)</div>
       </div>
     </div>
   </aside>

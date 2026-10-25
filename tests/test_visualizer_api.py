@@ -216,7 +216,7 @@ def test_solver_api_scramble_full_stm():
 
 
 def test_solver_api_solve_cross_matches_center():
-    """Verify that solved cross edges match the center piece in the visualizer."""
+    """Verify that solved cross edges match the center in the visualizer."""
     api = SolverAPI(device="cpu")
     api.scramble(depth=4)
 
@@ -373,3 +373,127 @@ def test_visualizer_server_model_endpoint():
             assert data["models"]["cross"]["is_mock"] is True
     finally:
         server.shutdown()
+
+
+def test_solver_api_uses_model_trained_penalties(tmp_path):
+    import torch
+
+    from cubesight_ml.cube.moves import MOVE_TO_INDEX
+    from cubesight_ml.models import build_model
+
+    model_cfg = {
+        "state_representation": "per_sticker",
+        "n1": 32,
+        "n2": 32,
+        "n_r": 1,
+    }
+    model = build_model(model_cfg)
+    ckpt_file = tmp_path / "best_model.pt"
+    custom_penalties = {"R'": 0.85, "l'": 0.85}
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "model_config": model_cfg,
+            "move_penalties": custom_penalties,
+        },
+        ckpt_file,
+    )
+
+    api = SolverAPI(device="cpu")
+    assert api.model_penalties_name["pll"] == "zero_penalties.json"
+    assert len(api.model_penalties_dict["pll"]) == 0
+
+    # Load model checkpoint
+    state = api.set_stage_checkpoint("pll", str(ckpt_file))
+    assert state["models"]["pll"]["is_mock"] is False
+    assert state["models"]["pll"]["has_penalties"] is True
+    assert api.model_penalties["pll"][MOVE_TO_INDEX["R'"]] == 0.85
+    assert api.model_penalties["pll"][MOVE_TO_INDEX["l'"]] == 0.85
+
+    # Solve without passing move_penalties (default GUI behavior)
+    api.apply_move("R")
+    sol = api.solve(stage="pll", beam_width=100, max_steps=1)
+    assert sol["success"] is True
+    assert sol["moves"][0] in ["R'", "l'"]
+    assert round(sol["total_cost"], 2) == 1.85
+
+    # Explicit override outside GUI should be honored
+    sol_override = api.solve(
+        stage="pll",
+        beam_width=100,
+        max_steps=1,
+        move_penalties="presets/zero_penalties.json",
+    )
+    assert sol_override["success"] is True
+    assert sol_override["moves"][0] in ["R'", "l'"]
+    assert round(sol_override["total_cost"], 2) == 1.0
+
+
+def test_visualizer_server_solve_uses_model_penalties(tmp_path):
+    import torch
+
+    from cubesight_ml.models import build_model
+
+    model_cfg = {
+        "state_representation": "per_sticker",
+        "n1": 32,
+        "n2": 32,
+        "n_r": 1,
+    }
+    model = build_model(model_cfg)
+    ckpt_file = tmp_path / "best_model.pt"
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "model_config": model_cfg,
+            "move_penalties": {"R'": 0.7, "l'": 0.7},
+        },
+        ckpt_file,
+    )
+
+    api = SolverAPI(device="cpu")
+    api.set_stage_checkpoint("pll", str(ckpt_file))
+    server, url = start_server(api, host="127.0.0.1", port=0)
+    try:
+        api.apply_move("R")
+        # Request WITHOUT move_penalties (simulating updated GUI)
+        req = urllib.request.Request(
+            f"{url}/api/solve",
+            data=json.dumps(
+                {
+                    "stage": "pll",
+                    "beam_width": 100,
+                    "max_steps": 1,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            sol_data = json.loads(resp.read().decode("utf-8"))
+            assert sol_data["success"] is True
+            assert sol_data["moves"][0] in ["R'", "l'"]
+            assert round(sol_data["total_cost"], 2) == 1.7
+    finally:
+        server.shutdown()
+
+
+def test_solver_api_multi_stage_solve_uses_per_stage_penalties():
+    import numpy as np
+
+    from cubesight_ml.cube.moves import MOVE_TO_INDEX
+
+    api = SolverAPI(device="cpu")
+    api.model_penalties["cross"] = np.zeros(54, dtype=np.float32)
+    api.model_penalties["pll"] = np.zeros(54, dtype=np.float32)
+    api.model_penalties["pll"][MOVE_TO_INDEX["U'"]] = 0.75
+    api.model_penalties["pll"][MOVE_TO_INDEX["d'"]] = 0.75
+
+    api.apply_move("U")
+    res = api.solve(stage="all", beam_width=50, max_steps=10)
+    assert res["success"] is True
+
+    pll_info = next(s for s in res["stage_breakdown"] if s["stage"] == "pll")
+    assert pll_info["solved"] is True
+    assert pll_info["moves"][0] in ["U'", "d'"]
+    assert round(pll_info["cost"], 2) == 1.75

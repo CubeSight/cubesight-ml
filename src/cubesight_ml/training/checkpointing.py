@@ -27,6 +27,7 @@ def save_checkpoint_and_stats(
     cumulative_flops_target: float | None = None,
     target_sample_counts: list[int] | None = None,
     eval_metrics: dict[str, Any] | None = None,
+    move_penalties: Any | None = None,
 ) -> None:
     """Saves training checkpoint and updates stats file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +69,8 @@ def save_checkpoint_and_stats(
         ckpt_data["target_sample_counts"] = target_sample_counts
     if eval_metrics is not None:
         ckpt_data["eval_metrics"] = eval_metrics
+    if move_penalties is not None:
+        ckpt_data["move_penalties"] = move_penalties
 
     torch.save(ckpt_data, path)
 

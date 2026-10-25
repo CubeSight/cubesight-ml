@@ -53,7 +53,9 @@ def apply_action_sequence(
     moves: list[int],
     cube_ops: TorchCubeOps,
 ) -> np.ndarray:
-    """Sequentially applies move indices to a flat numpy state using TorchCubeOps."""
+    """Sequentially applies move indices to a flat numpy state using
+    TorchCubeOps.
+    """
     if not moves:
         return state.copy()
     dev = cube_ops.device
@@ -67,8 +69,8 @@ def apply_action_sequence(
 
 
 class StagedSolver:
-    """
-    Coordinates sequential 4-stage Beam Search solving (Color-Neutral Cross -> Reorient to D -> F2L -> OLL -> PLL).
+    """Coordinates sequential 4-stage Beam Search solving:
+    Color-Neutral Cross -> Reorient to D -> F2L -> OLL -> PLL.
     Supports STM, rotations, and move execution penalties.
     """
 
@@ -107,6 +109,20 @@ class StagedSolver:
         self.max_steps_dict: dict[Stage, int] = {}
         self.searchers: dict[Stage, BeamSearch] = {}
 
+        is_stage_penalties = isinstance(move_penalties, dict) and any(
+            k in move_penalties
+            for k in [
+                Stage.CROSS,
+                Stage.F2L,
+                Stage.OLL,
+                Stage.PLL,
+                "cross",
+                "f2l",
+                "oll",
+                "pll",
+            ]
+        )
+
         for st in [Stage.CROSS, Stage.F2L, Stage.OLL, Stage.PLL]:
             bw = beam_width[st] if isinstance(beam_width, dict) else beam_width
             ms = max_steps[st] if isinstance(max_steps, dict) else max_steps
@@ -124,11 +140,18 @@ class StagedSolver:
             )
             model_key = st if st in models else st.value
             model = models[model_key]
+
+            st_penalties = (
+                move_penalties.get(st, move_penalties.get(st.value, None))
+                if is_stage_penalties
+                else move_penalties
+            )
+
             self.searchers[st] = BeamSearch(
                 model=model,
                 puzzle_handler=handler,
                 batch_size=512,
-                move_penalties=move_penalties if use_stm else None,
+                move_penalties=st_penalties if use_stm else None,
                 use_stm=use_stm,
                 verbose=verbose,
                 device=self.device,
