@@ -55,6 +55,13 @@ select = [
     "RET",
     "BLE",
     "TC",
+    "PLC0415",
+    "FA",
+    "PIE",
+    "PTH",
+    "PT",
+    "RUF",
+    "YTT",
 ]
 
 [tool.pytest.ini_options]

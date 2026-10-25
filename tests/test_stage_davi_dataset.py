@@ -47,7 +47,7 @@ def test_stage_davi_dataset_include_depth_zero():
         depth_sampling="stratified",
         data_seed=123,
     )
-    parents, depths = next(iter(dataset))
+    _parents, depths = next(iter(dataset))
     assert (depths >= 0).all()
     # With depth 0 included and stratified, at least some depths should be 0
     assert (depths == 0).any()

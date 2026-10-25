@@ -296,7 +296,7 @@ def main() -> None:
         "data_seed": data_seed,
         "dataloader_seed": dataloader_seed,
     }
-    with open(save_dir / "seeds.json", "w", encoding="utf-8") as f:
+    with (save_dir / "seeds.json").open("w", encoding="utf-8") as f:
         json.dump(seeds_dict, f, indent=2)
 
     # Save configuration
@@ -304,7 +304,7 @@ def main() -> None:
     config_dict["resolved_precondition_fraction"] = precond_frac
     config_dict["device"] = str(device)
     config_dict.update(seeds_dict)
-    with open(save_dir / "config.json", "w", encoding="utf-8") as f:
+    with (save_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(config_dict, f, indent=2)
 
     if args.move_penalties:
@@ -314,7 +314,9 @@ def main() -> None:
             for i in range(len(penalties_arr))
             if penalties_arr[i] > 0.0
         }
-        with open(save_dir / "move_penalties.json", "w", encoding="utf-8") as f:
+        with (save_dir / "move_penalties.json").open(
+            "w", encoding="utf-8"
+        ) as f:
             json.dump(penalties_dict, f, indent=2)
 
     # Build model & target model
@@ -344,7 +346,7 @@ def main() -> None:
                 p.numel() for p in active_model.parameters() if p.requires_grad
             ),
         }
-        with open(save_dir / "model_profile.json", "w", encoding="utf-8") as f:
+        with (save_dir / "model_profile.json").open("w", encoding="utf-8") as f:
             json.dump(profile_data, f, indent=2)
         n_params = profile_data["total_params"]
         mflops = profile_data["flops_per_sample"] / 1e6
@@ -380,10 +382,7 @@ def main() -> None:
         logger.info(f"Loading checkpoint from: {args.checkpoint}")
         ckpt = load_checkpoint(args.checkpoint, device=device)
         active_model.load_state_dict(ckpt["model_state_dict"])
-        if (
-            "target_model_state_dict" in ckpt
-            and ckpt["target_model_state_dict"]
-        ):
+        if ckpt.get("target_model_state_dict"):
             target_model.load_state_dict(ckpt["target_model_state_dict"])
         else:
             target_model.load_state_dict(ckpt["model_state_dict"])
@@ -395,7 +394,7 @@ def main() -> None:
             and ckpt["scheduler_state_dict"]
         ):
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        if "sync_policy_state" in ckpt and ckpt["sync_policy_state"]:
+        if ckpt.get("sync_policy_state"):
             sync_policy.load_state_dict(ckpt["sync_policy_state"])
 
     # DataLoader

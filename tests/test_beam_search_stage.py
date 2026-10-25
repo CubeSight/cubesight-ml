@@ -40,7 +40,7 @@ def test_beam_search_pll_immediate_skip():
     searcher = BeamSearch(model, handler, batch_size=64, device="cpu")
 
     # Solved cube is already PLL goal
-    solution, steps, stats = searcher.find_solution(
+    solution, steps, _stats = searcher.find_solution(
         SOLVED_FLAT, beam_width=10, num_steps=10
     )
     assert solution == []
@@ -61,7 +61,7 @@ def test_beam_search_finds_single_move_solution():
     scramble_move = torch.tensor([9], dtype=torch.long)
     state = ops.apply_moves(solved_t, scramble_move).squeeze(0).numpy()
 
-    solution, steps, stats = searcher.find_solution(
+    solution, _steps, _stats = searcher.find_solution(
         state, beam_width=10, num_steps=5
     )
 
@@ -90,7 +90,7 @@ def test_beam_search_finds_multi_move_cross_solution():
         .numpy()
     )
 
-    solution, steps, stats = searcher.find_solution(
+    solution, _steps, _stats = searcher.find_solution(
         state, beam_width=20, num_steps=6
     )
 

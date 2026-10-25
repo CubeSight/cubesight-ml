@@ -179,19 +179,21 @@ def main() -> None:
         "device": str(device),
         "model_config": getattr(model, "config", {}),
     }
-    with open(output_dir / "config.json", "w", encoding="utf-8") as f:
+    with (output_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(config_dict, f, indent=2)
 
-    with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:
+    with (output_dir / "metrics.json").open("w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 
-    with open(
-        output_dir / "lengths_distribution.json", "w", encoding="utf-8"
+    with (output_dir / "lengths_distribution.json").open(
+        "w", encoding="utf-8"
     ) as f:
         json.dump(lengths_dist, f, indent=2)
 
     # First 10 solutions for qualitative inspection
-    with open(output_dir / "solutions_sample.json", "w", encoding="utf-8") as f:
+    with (output_dir / "solutions_sample.json").open(
+        "w", encoding="utf-8"
+    ) as f:
         json.dump(results["move_names"][:10], f, indent=2)
 
     # 6. Terminal Summary Table

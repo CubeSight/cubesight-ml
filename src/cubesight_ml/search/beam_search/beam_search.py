@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,113 @@ from cubesight_ml.cube.moves import (
     NUM_MOVES,
     parse_move_penalties,
 )
+from cubesight_ml.models import build_model
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
+
+
+def _load_model_checkpoint(
+    checkpoint_path: Path | str,
+    device: torch.device,
+) -> nn.Module:
+    """Loads a model and attached penalties from a checkpoint file."""
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    cfg = ckpt.get("model_config", {})
+    model = build_model(cfg).to(device)
+    sd = ckpt.get("model_state_dict", ckpt.get("target_model_state_dict", ckpt))
+    if isinstance(sd, dict):
+        cleaned_sd = {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
+        model.load_state_dict(cleaned_sd)
+    model.eval()
+
+    penalties = ckpt.get("move_penalties")
+    model.move_penalties = penalties
+    model.checkpoint_path = Path(checkpoint_path)
+    if hasattr(model, "config") and isinstance(model.config, dict):
+        model.config["move_penalties"] = penalties
+    return model
+
+
+def _extract_model_penalties(model_or_path: Any) -> np.ndarray:
+    """Extracts trained ergonomic move penalties from model or model file."""
+    zero_arr = np.zeros(NUM_MOVES, dtype=np.float32)
+    if model_or_path is None:
+        return zero_arr
+
+    # 1. Direct attribute on model or wrapper
+    raw_penalties = getattr(model_or_path, "move_penalties", None)
+    if raw_penalties is None:
+        backbone = getattr(model_or_path, "backbone", None)
+        raw_penalties = getattr(backbone, "move_penalties", None)
+
+    # 2. Inside model.config dict
+    if raw_penalties is None:
+        cfg = getattr(model_or_path, "config", None)
+        if isinstance(cfg, dict):
+            raw_penalties = cfg.get("move_penalties")
+
+    if raw_penalties is not None:
+        penalties_arr = parse_move_penalties(raw_penalties)
+        if np.any(penalties_arr > 0.0):
+            return penalties_arr
+
+    # 3. Checkpoint path (either passed directly or attached to model)
+    ckpt_path = model_or_path if isinstance(model_or_path, str | Path) else None
+    if ckpt_path is None:
+        ckpt_path = getattr(
+            model_or_path,
+            "checkpoint_path",
+            getattr(model_or_path, "checkpoint", None),
+        )
+
+    if not ckpt_path:
+        return zero_arr
+
+    p = Path(ckpt_path)
+    model_dir = p.parent if p.is_file() else p
+    penalties_arr = None
+
+    # Load from model file (.pt)
+    if p.is_file():
+        try:
+            ckpt_data = torch.load(p, map_location="cpu", weights_only=False)
+            if ckpt_data.get("move_penalties"):
+                raw = ckpt_data["move_penalties"]
+                penalties_arr = parse_move_penalties(raw)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Fallback to model directory: move_penalties.json
+    if (
+        penalties_arr is None or not np.any(penalties_arr > 0.0)
+    ) and model_dir.is_dir():
+        pen_file = model_dir / "move_penalties.json"
+        if pen_file.is_file():
+            try:
+                with pen_file.open(encoding="utf-8") as f:
+                    data = json.load(f)
+                penalties_arr = parse_move_penalties(data)
+            except Exception:  # noqa: BLE001
+                pass
+
+    # Fallback to model directory: config.json
+    if (
+        penalties_arr is None or not np.any(penalties_arr > 0.0)
+    ) and model_dir.is_dir():
+        cfg_file = model_dir / "config.json"
+        if cfg_file.is_file():
+            try:
+                with cfg_file.open(encoding="utf-8") as f:
+                    cfg = json.load(f)
+                if cfg.get("move_penalties"):
+                    raw_cfg = cfg["move_penalties"]
+                    penalties_arr = parse_move_penalties(raw_cfg)
+            except Exception:  # noqa: BLE001
+                pass
+
+    if penalties_arr is not None and np.any(penalties_arr > 0.0):
+        return penalties_arr
+
+    return zero_arr
 
 
 class BeamSearch:
@@ -43,11 +150,7 @@ class BeamSearch:
             self.device = torch.device(device)
 
         if isinstance(model, str | Path):
-            from cubesight_ml.training.checkpointing import (
-                load_model_from_checkpoint,
-            )
-
-            self.model = load_model_from_checkpoint(model, device=self.device)
+            self.model = _load_model_checkpoint(model, device=self.device)
         else:
             self.model = model.to(self.device)
         self.model.eval()
@@ -62,11 +165,7 @@ class BeamSearch:
 
         # Default to ergonomic penalties inside model file if not specified
         if move_penalties is None:
-            from cubesight_ml.training.checkpointing import (
-                extract_model_penalties,
-            )
-
-            penalties_np, _, _ = extract_model_penalties(self.model)
+            penalties_np = _extract_model_penalties(self.model)
         else:
             penalties_np = parse_move_penalties(move_penalties)
 

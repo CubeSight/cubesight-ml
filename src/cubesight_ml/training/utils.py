@@ -1,8 +1,11 @@
 import atexit
+import contextlib
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+from loguru import logger
 
 
 class TeeStream:
@@ -59,15 +62,13 @@ class ConsoleLogger:
             return self
         self._owner_pid = os.getpid()
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.file = open(self.log_path, "a", encoding="utf-8")  # noqa: SIM115
+        self.file = self.log_path.open("a", encoding="utf-8")
 
         try:
-            from loguru import logger
-
             logger.remove()
             logger.add(self.orig_stderr, colorize=True)
             self.loguru_sink_id = logger.add(self.file, colorize=False)
-        except ImportError:
+        except Exception:  # noqa: BLE001
             pass
 
         sys.stdout = TeeStream(self.orig_stdout, self.file)
@@ -85,12 +86,8 @@ class ConsoleLogger:
         self._is_active = False
 
         if self.loguru_sink_id is not None:
-            try:
-                from loguru import logger
-
+            with contextlib.suppress(ValueError, KeyError, OSError):
                 logger.remove(self.loguru_sink_id)
-            except (ValueError, KeyError, OSError):
-                pass
             self.loguru_sink_id = None
 
         sys.stdout = self.orig_stdout

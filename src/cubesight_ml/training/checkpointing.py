@@ -12,6 +12,7 @@ from cubesight_ml.cube.moves import (
     NUM_MOVES,
     parse_move_penalties,
 )
+from cubesight_ml.models.value_wrapper import build_model
 
 
 def save_checkpoint_and_stats(
@@ -109,7 +110,7 @@ def save_checkpoint_and_stats(
         stats_data["eval_metrics"] = eval_metrics
 
     stats_path = path.parent / f"{path.stem}_stats.json"
-    with open(stats_path, "w", encoding="utf-8") as f:
+    with stats_path.open("w", encoding="utf-8") as f:
         json.dump(stats_data, f, indent=2)
 
 
@@ -191,7 +192,7 @@ def extract_model_penalties(
     if p.is_file():
         try:
             ckpt_data = load_checkpoint(p, device="cpu")
-            if "move_penalties" in ckpt_data and ckpt_data["move_penalties"]:
+            if ckpt_data.get("move_penalties"):
                 raw = ckpt_data["move_penalties"]
                 penalties_arr = parse_move_penalties(raw)
                 if isinstance(raw, str):
@@ -208,7 +209,7 @@ def extract_model_penalties(
         pen_file = model_dir / "move_penalties.json"
         if pen_file.is_file():
             try:
-                with open(pen_file, encoding="utf-8") as f:
+                with pen_file.open(encoding="utf-8") as f:
                     data = json.load(f)
                 penalties_arr = parse_move_penalties(data)
                 preset_name = "move_penalties.json"
@@ -222,7 +223,7 @@ def extract_model_penalties(
         cfg_file = model_dir / "config.json"
         if cfg_file.is_file():
             try:
-                with open(cfg_file, encoding="utf-8") as f:
+                with cfg_file.open(encoding="utf-8") as f:
                     cfg = json.load(f)
                 if cfg.get("move_penalties"):
                     raw_cfg = cfg["move_penalties"]
@@ -254,8 +255,6 @@ def load_model_from_checkpoint(
         checkpoint_path, device=device, map_location=map_location
     )
     cfg = ckpt.get("model_config", {})
-    from cubesight_ml.models.value_wrapper import build_model
-
     target_dev = torch.device(device) if isinstance(device, str) else device
     model = build_model(cfg).to(target_dev)
     sd = ckpt.get("model_state_dict", ckpt.get("target_model_state_dict", ckpt))

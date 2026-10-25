@@ -4,6 +4,15 @@ from typing import Any
 
 import numpy as np
 
+from cubesight_ml.cube.layout import (
+    C_ROT_NP,
+    CORNER_STICKER_LUT_NP,
+    CORNERS_FACES,
+    E_ROT_NP,
+    EDGE_STICKER_LUT_NP,
+    EDGES_FACES,
+)
+
 # ---------------------------------------------------------------------------
 # Move Nomenclature: 54 moves in STM with double turns and rotations
 # ---------------------------------------------------------------------------
@@ -124,11 +133,6 @@ def _compute_sticker_perms() -> tuple[np.ndarray, np.ndarray]:
         perms: ndarray of shape (55, 54), where perms[m] is the permutation for move m.
         inverses: ndarray of shape (55,), mapping each move index to its inverse index.
     """
-    from cubesight_ml.cube.layout import (
-        C_ROT_NP,
-        E_ROT_NP,
-    )
-
     base_moves = {
         "U": {
             "cp": np.array([3, 0, 1, 2, 4, 5, 6, 7], dtype=np.int32),
@@ -365,13 +369,6 @@ STICKER_MOVE_PERMS_54, INVERSE_MOVES_54 = _compute_sticker_perms()
 def _compute_piece_tables(
     perms_54: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    from cubesight_ml.cube.layout import (
-        CORNER_STICKER_LUT_NP,
-        CORNERS_FACES,
-        EDGE_STICKER_LUT_NP,
-        EDGES_FACES,
-    )
-
     stickers_solved = np.empty(54, dtype=np.int8)
     stickers_solved[:6] = np.arange(6)
     for s in range(8):
@@ -450,7 +447,7 @@ def parse_move_penalties(
             if preset_candidate.is_file():
                 p_path = preset_candidate
         if p_path.is_file():
-            with open(p_path, encoding="utf-8") as f:
+            with p_path.open(encoding="utf-8") as f:
                 data = json.load(f)
         else:
             # Try parsing as JSON string

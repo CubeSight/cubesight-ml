@@ -204,7 +204,7 @@ def train_davi(
                 writer.add_scalar("Targets/goal_fraction", goal_frac, step)
 
                 # Mean targets and preds by depth
-                for k in range(0, 11):
+                for k in range(11):
                     k_mask = depths == k
                     if k_mask.any():
                         writer.add_scalar(

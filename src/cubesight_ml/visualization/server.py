@@ -7,6 +7,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import webview
 from loguru import logger
 
 from cubesight_ml.visualization.backend import SolverAPI
@@ -150,8 +151,6 @@ def launch_visualizer(
 
     # Try launching native pywebview desktop window
     try:
-        import webview
-
         logger.info("Launching native 3D visualizer window...")
         webview.create_window(
             title="CubeSight-ML | 3D Rubik's Cube Solver Studio",

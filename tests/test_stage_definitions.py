@@ -10,6 +10,8 @@ from cubesight_ml.cube.layout import (
     STATE_SIZE,
     apply_cube_rotation,
 )
+from cubesight_ml.cube.moves import MOVE_TO_INDEX, ROTATION_MOVES
+from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.stages.definitions import (
     CROSS_FACE_EDGES,
     CROSS_FACE_MASKS,
@@ -24,6 +26,7 @@ from cubesight_ml.stages.goal_checker import (
     detect_solved_cross_face,
     is_goal_np,
 )
+from cubesight_ml.stages.goal_sampler import sample_goal_states
 
 
 def test_stage_hierarchy():
@@ -84,8 +87,6 @@ def test_cross_faces_and_detection():
 
     # For each face, create a state where that face's cross is solved
     for face in CROSS_FACE_EDGES:
-        from cubesight_ml.stages.goal_sampler import sample_goal_states
-
         state = sample_goal_states(
             CROSS_SPEC, 1, rng=rng, fixed_cross_face=face
         )[0]
@@ -141,9 +142,6 @@ def test_stage_goal_checker_pytorch():
 
 def test_cross_on_d_and_rotations():
     """Verify that CROSS_SPEC requires cross on D and respects rotations."""
-    from cubesight_ml.cube.moves import MOVE_TO_INDEX, ROTATION_MOVES
-    from cubesight_ml.cube.torch_ops import TorchCubeOps
-
     checker = StageGoalChecker(CROSS_SPEC, device="cpu")
     ops = TorchCubeOps(use_stm=True, include_rotations=True, device="cpu")
 

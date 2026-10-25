@@ -1,9 +1,19 @@
+import numpy as np
 import torch
 import torch.nn as nn
 
 from cubesight_ml.cube.layout import (
+    EO,
     SOLVED_FLAT,
     apply_cube_rotation,
+)
+from cubesight_ml.cube.moves import (
+    BASE_MOVE_COSTS_STM,
+    CENTER_RESTORE_MAP,
+    MOVE_CENTERS_54,
+    MOVE_TO_INDEX,
+    ROTATION_MOVES,
+    get_restore_rotations,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.search.staged_solver import StagedSolver
@@ -11,6 +21,7 @@ from cubesight_ml.stages.definitions import STAGES, Stage
 from cubesight_ml.stages.goal_checker import (
     StageGoalChecker,
     detect_solved_cross_face,
+    is_goal_np,
 )
 
 
@@ -55,8 +66,6 @@ def test_staged_solver_with_cross_reorientation(monkeypatch):
     )
 
     # State with F-cross solved, others broken
-    from cubesight_ml.cube.layout import EO
-
     f_cross_cube = apply_cube_rotation(SOLVED_FLAT, "x")
     for e in [1, 2, 3, 5, 6, 7]:
         f_cross_cube[EO.start + e] ^= 1
@@ -119,15 +128,6 @@ def test_staged_solver_failure_handling():
 
 def test_get_restore_rotations_all_24_orientations():
     """Verify that get_restore_rotations restores all 24 reachable center orientations."""
-    import numpy as np
-
-    from cubesight_ml.cube.moves import (
-        CENTER_RESTORE_MAP,
-        MOVE_CENTERS_54,
-        MOVE_TO_INDEX,
-        get_restore_rotations,
-    )
-
     canonical = (0, 1, 2, 3, 4, 5)
     assert len(CENTER_RESTORE_MAP) == 24
 
@@ -141,10 +141,6 @@ def test_get_restore_rotations_all_24_orientations():
 
 def test_staged_solver_with_non_canonical_centers():
     """Verify StagedSolver automatically reorients cubes with rotated centers."""
-    import numpy as np
-
-    from cubesight_ml.cube.moves import MOVE_CENTERS_54, MOVE_TO_INDEX
-
     models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
     solver = StagedSolver(
         models=models, beam_width=10, max_steps=5, device="cpu"
@@ -172,14 +168,6 @@ def test_staged_solver_with_non_canonical_centers():
 
 def test_full_stm_rotations_counted_and_executed():
     """Verify that full STM is used, rotations count as 1.0, and centers match."""
-
-    from cubesight_ml.cube.moves import (
-        BASE_MOVE_COSTS_STM,
-        MOVE_TO_INDEX,
-        ROTATION_MOVES,
-    )
-    from cubesight_ml.stages.goal_checker import is_goal_np
-
     # 1. Rotations must count as 1.0 move in BASE_MOVE_COSTS_STM
     for rot in ROTATION_MOVES:
         idx = MOVE_TO_INDEX[rot]
@@ -208,7 +196,7 @@ def test_full_stm_rotations_counted_and_executed():
     # 4. Solves with full STM
     scramble_ops = TorchCubeOps(use_stm=True, device="cpu")
     solved_46 = torch.tensor(
-        list(SOLVED_FLAT) + [0, 1, 2, 3, 4, 5], dtype=torch.long
+        [*list(SOLVED_FLAT), 0, 1, 2, 3, 4, 5], dtype=torch.long
     ).unsqueeze(0)
     # Scramble with a rotation move 'y' and face move 'U'
     moves = torch.tensor(

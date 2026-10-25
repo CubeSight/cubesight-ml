@@ -76,7 +76,7 @@ def test_scramble_per_sample_depths():
 
 
 @pytest.mark.parametrize(
-    "use_stm,use_double_moves,expected_moves",
+    ("use_stm", "use_double_moves", "expected_moves"),
     [
         (False, False, 12),
         (False, True, 18),

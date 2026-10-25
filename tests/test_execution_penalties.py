@@ -8,10 +8,12 @@ from cubesight_ml.cube.moves import (
     MOVE_TO_INDEX,
     parse_move_penalties,
 )
+from cubesight_ml.models.value_wrapper import build_model
 from cubesight_ml.search.beam_search.beam_search import BeamSearch
 from cubesight_ml.search.beam_search.utils import BeamSearchRubiksCubeHandler
 from cubesight_ml.stages.definitions import PLL_SPEC
 from cubesight_ml.stages.goal_checker import StageGoalChecker
+from cubesight_ml.training.checkpointing import load_model_from_checkpoint
 
 
 class DistanceMockModel(nn.Module):
@@ -52,7 +54,7 @@ def test_parse_move_penalties():
     assert p_str[MOVE_TO_INDEX["M"]] == pytest.approx(0.4)
 
     # Invalid penalty value raises
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="must be non-negative"):
         parse_move_penalties({"R": -1.0})
 
     # Unknown move name raises
@@ -88,7 +90,7 @@ def test_beam_search_with_penalties():
         use_stm=True,
         device=device,
     )
-    sol, steps, stats = searcher.find_solution(
+    sol, _steps, stats = searcher.find_solution(
         scrambled, beam_width=10, num_steps=5
     )
     assert sol is not None
@@ -160,9 +162,6 @@ def test_zero_penalties_preset():
 
 
 def test_beam_search_uses_model_file_penalties_by_default(tmp_path):
-    from cubesight_ml.models.value_wrapper import build_model
-    from cubesight_ml.training.checkpointing import load_model_from_checkpoint
-
     model_cfg = {
         "state_representation": "per_sticker",
         "n1": 32,

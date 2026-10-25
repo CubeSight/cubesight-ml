@@ -547,7 +547,7 @@ class SolverAPI:
             state_tensor = torch.tensor(
                 state_46, dtype=torch.long, device=self.device
             )
-            sol_indices, steps, stats = searcher.find_solution(
+            sol_indices, _steps, stats = searcher.find_solution(
                 state_tensor, beam_width=beam_width, num_steps=max_steps
             )
             elapsed = time.perf_counter() - start_time

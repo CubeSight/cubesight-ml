@@ -12,6 +12,7 @@ from cubesight_ml.cube.layout import to_flat
 from cubesight_ml.envs.rubiks_cube import RubiksCubeEnv
 from cubesight_ml.search.staged_solver import StagedSolver
 from cubesight_ml.stages.definitions import Stage
+from cubesight_ml.training.checkpointing import load_model_from_checkpoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,8 +136,6 @@ def parse_args() -> argparse.Namespace:
 def load_model_from_ckpt(
     ckpt_path: str | Path, device: torch.device
 ) -> torch.nn.Module:
-    from cubesight_ml.training.checkpointing import load_model_from_checkpoint
-
     return load_model_from_checkpoint(ckpt_path, device=device)
 
 
@@ -352,16 +351,18 @@ def main() -> None:
         "seed": args.seed,
         "device": str(device),
     }
-    with open(output_dir / "config.json", "w", encoding="utf-8") as f:
+    with (output_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(config_dict, f, indent=2)
 
-    with open(output_dir / "pipeline_results.json", "w", encoding="utf-8") as f:
+    with (output_dir / "pipeline_results.json").open(
+        "w", encoding="utf-8"
+    ) as f:
         json.dump(pipeline_results, f, indent=2)
 
-    with open(output_dir / "stage_breakdown.json", "w", encoding="utf-8") as f:
+    with (output_dir / "stage_breakdown.json").open("w", encoding="utf-8") as f:
         json.dump(stage_breakdown, f, indent=2)
 
-    with open(output_dir / "solutions.json", "w", encoding="utf-8") as f:
+    with (output_dir / "solutions.json").open("w", encoding="utf-8") as f:
         json.dump(solutions_list, f, indent=2)
 
     # Terminal summary table

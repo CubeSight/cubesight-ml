@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+from cubesight_ml.cube.layout import SOLVED_FLAT
 from cubesight_ml.cube.moves import (
     ALL_MOVES,
     BASE_MOVE_COSTS_STM,
@@ -84,7 +85,7 @@ def test_rubiks_cube_env_stm():
 
     # Test single slice move M
     m_idx = MOVE_TO_INDEX["M"]
-    cp, co, ep, eo = env.step(np.full(4, m_idx, dtype=np.int32))
+    cp, co, _ep, _eo = env.step(np.full(4, m_idx, dtype=np.int32))
     # Corners do not move under M
     assert np.all(cp == np.arange(8))
     assert np.all(co == 0)
@@ -115,8 +116,6 @@ def test_torch_cube_ops_stm():
     assert ops.num_moves == 54
 
     # Test expanding 40-element state
-    from cubesight_ml.cube.layout import SOLVED_FLAT
-
     states = (
         torch.tensor(SOLVED_FLAT, dtype=torch.long).unsqueeze(0).expand(2, -1)
     )

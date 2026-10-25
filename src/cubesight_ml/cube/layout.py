@@ -125,18 +125,18 @@ for rot_name, face_map in _ROTATION_MAPS.items():
         stk_perm[c] = face_map[c]
     for s in range(8):
         new_s_faces = [face_map[f] for f in CORNERS_FACES[s]]
-        target_s = [
+        target_s = next(
             i for i, f in enumerate(CORNERS_FACES) if set(f) == set(new_s_faces)
-        ][0]
+        )
         for j, f in enumerate(CORNERS_FACES[s]):
             new_f = face_map[f]
             target_j = CORNERS_FACES[target_s].index(new_f)
             stk_perm[6 + 3 * s + j] = 6 + 3 * target_s + target_j
     for s in range(12):
         new_s_faces = [face_map[f] for f in EDGES_FACES[s]]
-        target_s = [
+        target_s = next(
             i for i, f in enumerate(EDGES_FACES) if set(f) == set(new_s_faces)
-        ][0]
+        )
         for j, f in enumerate(EDGES_FACES[s]):
             new_f = face_map[f]
             target_j = EDGES_FACES[target_s].index(new_f)

@@ -1,7 +1,14 @@
 import json
 import urllib.request
+from pathlib import Path
+
+import numpy as np
+import pytest
+import torch
 
 from cubesight_ml.cube.layout import SOLVED_FLAT, from_flat
+from cubesight_ml.cube.moves import MOVE_TO_INDEX
+from cubesight_ml.models import build_model
 from cubesight_ml.visualization.backend import SolverAPI
 from cubesight_ml.visualization.cube_state import (
     get_cubies_representation,
@@ -202,13 +209,9 @@ def test_visualizer_server_endpoints():
 
 def test_solver_api_scramble_full_stm():
     """Verify that api.scramble uses full STM and produces valid cube states."""
-    import numpy as np
-
-    from cubesight_ml.cube.layout import SOLVED_FLAT
-
     api = SolverAPI(device="cpu")
     api.scramble(depth=20)
-    cp, co, ep, eo, centers = api.env.get_state_with_centers()
+    _cp, co, _ep, eo, _centers = api.env.get_state_with_centers()
     # Scramble is non-trivial and produces valid orientations
     assert np.sum(co[0]) % 3 == 0
     assert np.sum(eo[0]) % 2 == 0
@@ -242,8 +245,6 @@ def test_solver_api_solve_cross_matches_center():
 
 def test_solver_api_solve_rotated_cube():
     """Verify that visualizer solves cross on D for rotated cube."""
-    import numpy as np
-
     api = SolverAPI(device="cpu")
     api.apply_move("x")
     _, _, _, _, centers = api.env.get_state_with_centers()
@@ -263,8 +264,6 @@ def test_solver_api_solve_rotated_cube():
 
 
 def test_solver_api_default_zero_penalties_and_presets():
-    import numpy as np
-
     api = SolverAPI(device="cpu")
     # Default penalties must be all zeros
     assert np.all(api.default_penalties == 0.0)
@@ -328,14 +327,10 @@ def test_solver_api_defaults_to_mock_and_no_checkpoints():
 
 
 def test_solver_api_set_stage_checkpoint():
-    from pathlib import Path
-
-    import pytest
-
     api = SolverAPI(device="cpu")
 
     # Invalid stage raises ValueError
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown stage:"):
         api.set_stage_checkpoint("invalid_stage", "model.pt")
 
     # Non-existent checkpoint raises FileNotFoundError
@@ -376,11 +371,6 @@ def test_visualizer_server_model_endpoint():
 
 
 def test_solver_api_uses_model_trained_penalties(tmp_path):
-    import torch
-
-    from cubesight_ml.cube.moves import MOVE_TO_INDEX
-    from cubesight_ml.models import build_model
-
     model_cfg = {
         "state_representation": "per_sticker",
         "n1": 32,
@@ -430,10 +420,6 @@ def test_solver_api_uses_model_trained_penalties(tmp_path):
 
 
 def test_visualizer_server_solve_uses_model_penalties(tmp_path):
-    import torch
-
-    from cubesight_ml.models import build_model
-
     model_cfg = {
         "state_representation": "per_sticker",
         "n1": 32,
@@ -479,10 +465,6 @@ def test_visualizer_server_solve_uses_model_penalties(tmp_path):
 
 
 def test_solver_api_multi_stage_solve_uses_per_stage_penalties():
-    import numpy as np
-
-    from cubesight_ml.cube.moves import MOVE_TO_INDEX
-
     api = SolverAPI(device="cpu")
     api.model_penalties["cross"] = np.zeros(54, dtype=np.float32)
     api.model_penalties["pll"] = np.zeros(54, dtype=np.float32)
