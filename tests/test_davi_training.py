@@ -74,3 +74,55 @@ def test_train_davi_with_move_penalties(tmp_path: Path):
     assert (run_dir / "best_model.pt").is_file()
     assert (run_dir / "best_eval_model.pt").is_file()
     assert (run_dir / "final_model.pt").is_file()
+
+
+def test_best_model_resets_across_sync_periods(tmp_path: Path):
+    """Verify that best_model.pt is updated in subsequent sync periods."""
+    device = "cpu"
+    model_cfg = {
+        "state_representation": "per_piece",
+        "n1": 32,
+        "n2": 32,
+        "n_r": 1,
+        "dropout_rate": 0.0,
+        "output_dim": 1,
+    }
+    active_model = build_model(model_cfg).to(device)
+    target_model = deepcopy(active_model).to(device)
+
+    dataloader = DataLoader(DummyDataset(), batch_size=None)
+    optimizer = torch.optim.Adam(active_model.parameters(), lr=1e-3)
+    spec = CROSS_SPEC
+    cube_ops = TorchCubeOps(use_double_moves=False, device=device)
+    goal_checker = StageGoalChecker(spec, device=device)
+    # Sync on every step
+    sync_policy = DeepCubeASyncPolicy(sync_interval=1, loss_threshold=100.0)
+
+    save_dir = tmp_path / "sync_period_test"
+    train_davi(
+        active_model=active_model,
+        target_model=target_model,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        scheduler=None,
+        spec=spec,
+        cube_ops=cube_ops,
+        goal_checker=goal_checker,
+        sync_policy=sync_policy,
+        steps=2,
+        save_dir=save_dir,
+        batch_size=4,
+        stage="cross",
+        model_config=model_cfg,
+        loss_interval=1,
+        save_interval=10,
+        eval_interval=None,
+        device=device,
+        warmup_steps=0,
+    )
+
+    # Step 1 synced the network, so step 2 was evaluated in the new sync period.
+    # Because best_train_loss reset on sync, best_model.pt must be from step 2.
+    best_ckpt = torch.load(save_dir / "best_model.pt", weights_only=False)
+    assert best_ckpt["step"] == 2
+    assert best_ckpt["num_syncs"] == 1

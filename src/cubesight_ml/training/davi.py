@@ -233,9 +233,15 @@ def train_davi(
                     f"Time: {elapsed_time:.1f}s"
                 )
 
-                # Save best train loss model
+                # Save best train loss model for the current sync period
                 if mean_loss < best_train_loss:
                     best_train_loss = mean_loss
+                    sync_count = getattr(sync_policy, "num_syncs", 0)
+                    logger.info(
+                        f"Step {step:05d}: New best loss in period "
+                        f"#{sync_count}: {best_train_loss:.4f} "
+                        "(saving best_model.pt)"
+                    )
                     save_checkpoint_and_stats(
                         path=save_dir / "best_model.pt",
                         step=step,
@@ -251,7 +257,7 @@ def train_davi(
                         stage=stage,
                         model_config=model_config,
                         sync_policy_state=sync_policy.state_dict(),
-                        num_syncs=getattr(sync_policy, "num_syncs", 0),
+                        num_syncs=sync_count,
                         cumulative_flops=cumulative_flops,
                         cumulative_flops_active=cumulative_flops_active,
                         cumulative_flops_target=cumulative_flops_target,
@@ -272,6 +278,10 @@ def train_davi(
                         "Sync/count", getattr(sync_policy, "num_syncs", 0), step
                     )
                     writer.add_scalar("Sync/step", step, step)
+
+                    # Reset best loss for the new post-sync period: comparing
+                    # loss only makes sense within a single sync period.
+                    best_train_loss = float("inf")
 
                     # Run evaluation on sync
                     if eval_interval is not None:
