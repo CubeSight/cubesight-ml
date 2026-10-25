@@ -479,3 +479,39 @@ def test_solver_api_multi_stage_solve_uses_per_stage_penalties():
     assert pll_info["solved"] is True
     assert pll_info["moves"][0] in ["U'", "d'"]
     assert round(pll_info["cost"], 2) == 1.75
+
+
+def test_visualizer_solve_with_configurable_batch_size():
+    api = SolverAPI(device="cpu")
+    # Single stage solve accepts batch_size
+    api.apply_move("R")
+    res_single = api.solve(
+        stage="cross", beam_width=20, max_steps=5, batch_size=64
+    )
+    assert "success" in res_single
+
+    # Multi-stage solve accepts batch_size
+    res_all = api.solve(stage="all", beam_width=20, max_steps=5, batch_size=128)
+    assert "success" in res_all
+
+    # HTTP server /api/solve accepts batch_size
+    server, url = start_server(api, host="127.0.0.1", port=0)
+    try:
+        req = urllib.request.Request(
+            f"{url}/api/solve",
+            data=json.dumps(
+                {
+                    "stage": "cross",
+                    "beam_width": 20,
+                    "max_steps": 5,
+                    "batch_size": 256,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert "success" in data
+    finally:
+        server.shutdown()

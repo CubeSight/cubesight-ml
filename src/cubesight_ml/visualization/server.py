@@ -67,11 +67,13 @@ class VisualizerHandler(SimpleHTTPRequestHandler):
                 stage = body.get("stage", "all")
                 beam_width = int(body.get("beam_width", 100))
                 max_steps = int(body.get("max_steps", 40))
+                batch_size = int(body.get("batch_size", 512))
                 move_penalties = body.get("move_penalties")
                 res = self.api.solve(
                     stage=stage,
                     beam_width=beam_width,
                     max_steps=max_steps,
+                    batch_size=batch_size,
                     move_penalties=move_penalties,
                 )
                 self._send_json(res)

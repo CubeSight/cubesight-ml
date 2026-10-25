@@ -79,6 +79,7 @@ class StagedSolver:
         models: dict[Stage | str, nn.Module | str | Path],
         beam_width: int | dict[Stage | str, int] = 30,
         max_steps: int | dict[Stage | str, int] = 30,
+        batch_size: int | dict[Stage | str, int] = 512,
         use_stm: bool = True,
         use_double_moves: bool = True,
         include_rotations: bool = True,
@@ -108,6 +109,7 @@ class StagedSolver:
         # Standardize configs per stage
         self.beam_widths: dict[Stage, int] = {}
         self.max_steps_dict: dict[Stage, int] = {}
+        self.batch_sizes: dict[Stage, int] = {}
         self.searchers: dict[Stage, BeamSearch] = {}
 
         is_stage_penalties = isinstance(move_penalties, dict) and any(
@@ -127,8 +129,10 @@ class StagedSolver:
         for st in [Stage.CROSS, Stage.F2L, Stage.OLL, Stage.PLL]:
             bw = beam_width[st] if isinstance(beam_width, dict) else beam_width
             ms = max_steps[st] if isinstance(max_steps, dict) else max_steps
+            bs = batch_size[st] if isinstance(batch_size, dict) else batch_size
             self.beam_widths[st] = bw
             self.max_steps_dict[st] = ms
+            self.batch_sizes[st] = bs
 
             spec = STAGES[st]
             checker = StageGoalChecker(spec, device=self.device)
@@ -151,7 +155,7 @@ class StagedSolver:
             self.searchers[st] = BeamSearch(
                 model=model,
                 puzzle_handler=handler,
-                batch_size=512,
+                batch_size=bs,
                 move_penalties=st_penalties if use_stm else None,
                 use_stm=use_stm,
                 verbose=verbose,

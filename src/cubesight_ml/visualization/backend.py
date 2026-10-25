@@ -429,6 +429,7 @@ class SolverAPI:
         stage: str = "all",
         beam_width: int = 100,
         max_steps: int = 40,
+        batch_size: int = 512,
         move_penalties: str | dict | np.ndarray | None = None,
     ) -> dict[str, Any]:
         """Runs Beam Search inference for stage or whole 4-stage pipeline.
@@ -469,6 +470,7 @@ class SolverAPI:
                 models=models_dict,
                 beam_width=beam_width,
                 max_steps=max_steps,
+                batch_size=batch_size,
                 use_stm=True,
                 use_double_moves=True,
                 include_rotations=True,
@@ -535,6 +537,7 @@ class SolverAPI:
             searcher = BeamSearch(
                 model=self.models[stage],
                 puzzle_handler=handler,
+                batch_size=batch_size,
                 move_penalties=penalties,
                 use_stm=True,
                 device=self.device,

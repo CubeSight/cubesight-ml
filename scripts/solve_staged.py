@@ -78,6 +78,20 @@ def parse_args() -> argparse.Namespace:
         metavar=("CROSS", "F2L", "OLL", "PLL"),
         help="Individual max search steps for [Cross, F2L, OLL, PLL].",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=512,
+        help="Default batch size for beam search expansion.",
+    )
+    parser.add_argument(
+        "--batch_sizes",
+        type=int,
+        nargs=4,
+        default=None,
+        metavar=("CROSS", "F2L", "OLL", "PLL"),
+        help="Individual batch sizes for [Cross, F2L, OLL, PLL].",
+    )
 
     # Evaluation setup
     parser.add_argument(
@@ -187,10 +201,21 @@ def main() -> None:
     else:
         ms_dict = dict.fromkeys(Stage, args.max_steps)
 
+    if args.batch_sizes:
+        bs_dict = {
+            Stage.CROSS: args.batch_sizes[0],
+            Stage.F2L: args.batch_sizes[1],
+            Stage.OLL: args.batch_sizes[2],
+            Stage.PLL: args.batch_sizes[3],
+        }
+    else:
+        bs_dict = dict.fromkeys(Stage, args.batch_size)
+
     solver = StagedSolver(
         models=models,
         beam_width=bw_dict,
         max_steps=ms_dict,
+        batch_size=bs_dict,
         use_stm=use_stm,
         use_double_moves=use_double_moves,
         include_rotations=include_rotations,

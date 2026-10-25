@@ -57,14 +57,18 @@
         <div id="penalties-detail" style="font-size:10px; color:#71717a; margin-top:2px;">Using model's trained penalties</div>
       </div>
 
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px;">
         <div class="form-group">
-          <label for="beam-width">Beam Width</label>
+          <label for="beam-width" style="font-size:11px;">Beam Width</label>
           <input type="number" id="beam-width" value="100" min="1" max="5000">
         </div>
         <div class="form-group">
-          <label for="max-steps">Max Steps</label>
+          <label for="max-steps" style="font-size:11px;">Max Steps</label>
           <input type="number" id="max-steps" value="40" min="1" max="200">
+        </div>
+        <div class="form-group">
+          <label for="batch-size" style="font-size:11px;">Batch Size</label>
+          <input type="number" id="batch-size" value="512" min="1" max="8192">
         </div>
       </div>
     </div>

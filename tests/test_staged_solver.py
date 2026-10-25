@@ -210,3 +210,33 @@ def test_full_stm_rotations_counted_and_executed():
     res = solver.solve(scrambled_46)
     assert res.solved is True
     assert is_goal_np(res.final_state, STAGES[Stage.PLL])
+
+
+def test_staged_solver_configurable_batch_size():
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+
+    # 1. Default batch size is 512
+    default_solver = StagedSolver(models=models, device="cpu")
+    for st in Stage:
+        assert default_solver.batch_sizes[st] == 512
+        assert default_solver.searchers[st].batch_size == 512
+
+    # 2. Integer batch size
+    int_solver = StagedSolver(models=models, batch_size=256, device="cpu")
+    for st in Stage:
+        assert int_solver.batch_sizes[st] == 256
+        assert int_solver.searchers[st].batch_size == 256
+
+    # 3. Dict of batch sizes per stage
+    custom_bs = {
+        Stage.CROSS: 64,
+        Stage.F2L: 128,
+        Stage.OLL: 256,
+        Stage.PLL: 1024,
+    }
+    dict_solver = StagedSolver(
+        models=models, batch_size=custom_bs, device="cpu"
+    )
+    for st, expected_bs in custom_bs.items():
+        assert dict_solver.batch_sizes[st] == expected_bs
+        assert dict_solver.searchers[st].batch_size == expected_bs

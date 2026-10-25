@@ -322,6 +322,7 @@ function initEventListeners() {
     const stage = document.getElementById("stage-select").value;
     const beamWidth = parseInt(document.getElementById("beam-width").value, 10) || 100;
     const maxSteps = parseInt(document.getElementById("max-steps").value, 10) || 40;
+    const batchSize = parseInt(document.getElementById("batch-size").value, 10) || 512;
 
     pausePlayback();
     setStatus(`Running Beam Search (${stage.toUpperCase()})...`, "working");
@@ -331,6 +332,7 @@ function initEventListeners() {
         stage,
         beam_width: beamWidth,
         max_steps: maxSteps,
+        batch_size: batchSize,
       });
 
       if (result.success) {
