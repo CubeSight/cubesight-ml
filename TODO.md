@@ -1,0 +1,2 @@
+- fix color neutral cross (optimal cross color shouldn't depend on initial cube orientation, maybe add inspection rotation)
+- fix f2l being solved on another color
