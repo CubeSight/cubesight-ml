@@ -527,3 +527,39 @@ def get_restore_rotations(
     if key not in CENTER_RESTORE_MAP:
         raise ValueError(f"Invalid or unreachable center configuration: {key}")
     return list(CENTER_RESTORE_MAP[key])
+
+
+def _build_center_forward_map() -> dict[tuple[int, ...], list[str]]:
+    """Precomputes BFS shortest rotation sequences from canonical centers (0, 1, 2, 3, 4, 5)
+    to each of the 24 reachable center configurations."""
+    canonical = (0, 1, 2, 3, 4, 5)
+    fwd: dict[tuple[int, ...], list[str]] = {canonical: []}
+    queue: list[tuple[int, ...]] = [canonical]
+
+    while queue:
+        curr = queue.pop(0)
+        curr_arr = np.array(curr, dtype=np.int8)
+        for rot in ROTATION_MOVES:
+            m_idx = MOVE_TO_INDEX[rot]
+            perm = MOVE_CENTERS_54[m_idx]
+            nxt = tuple(int(x) for x in curr_arr[perm])
+            if nxt not in fwd:
+                fwd[nxt] = fwd[curr] + [rot]
+                queue.append(nxt)
+
+    return fwd
+
+
+CENTER_FORWARD_MAP: dict[tuple[int, ...], list[str]] = (
+    _build_center_forward_map()
+)
+
+
+def get_forward_rotations(
+    centers: tuple[int, ...] | list[int] | np.ndarray,
+) -> list[str]:
+    """Returns whole-cube rotation moves to rotate canonical centers to the target centers."""
+    key = tuple(int(c) for c in centers)
+    if key not in CENTER_FORWARD_MAP:
+        raise ValueError(f"Invalid or unreachable center configuration: {key}")
+    return list(CENTER_FORWARD_MAP[key])

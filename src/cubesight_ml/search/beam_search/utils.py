@@ -63,6 +63,11 @@ class BeamSearchRubiksCubeHandler:
     def state_to_model_input(
         self, states: torch.Tensor
     ) -> tuple[torch.Tensor, ...]:
+        if (
+            hasattr(self.goal_checker, "target_color")
+            and self.goal_checker.target_color is not None
+        ):
+            return (self.goal_checker.align_to_d(states),)
         return (states,)
 
     def state_from_env(

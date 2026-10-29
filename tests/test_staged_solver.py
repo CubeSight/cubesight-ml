@@ -16,7 +16,10 @@ from cubesight_ml.cube.moves import (
     get_restore_rotations,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
-from cubesight_ml.search.staged_solver import StagedSolver
+from cubesight_ml.search.staged_solver import (
+    StagedSolver,
+    apply_action_sequence,
+)
 from cubesight_ml.stages.definitions import STAGES, Stage
 from cubesight_ml.stages.goal_checker import (
     StageGoalChecker,
@@ -33,10 +36,22 @@ class StageDistanceMock(nn.Module):
         self.checker = StageGoalChecker(spec, device="cpu")
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        solved = self.checker.solved_flat
-        masks = self.checker.masks
-        x_expanded = x[..., :40].unsqueeze(1)
-        diffs = (x_expanded != solved) & masks
+        masks = self.checker.masks.to(x.device)
+        if x.size(-1) >= 46:
+            c = x[..., 40:46].long()
+            h = (c * self.checker.weights.to(x.device)).sum(dim=-1)
+            c_ids = self.checker.lut.to(x.device)[h]
+            target = self.checker.solved_table.to(x.device)[c_ids]
+            x_pieces = x[..., :40]
+        else:
+            target = self.checker.solved_flat.to(x.device)
+            x_pieces = x
+
+        x_expanded = x_pieces.unsqueeze(-2)
+        target_expanded = (
+            target.unsqueeze(-2) if target.ndim == x_pieces.ndim else target
+        )
+        diffs = (x_expanded != target_expanded) & masks
         mismatch_counts = diffs.sum(dim=-1)
         min_mismatches = mismatch_counts.min(dim=-1).values
         return {"value": min_mismatches.unsqueeze(-1).float()}
@@ -58,7 +73,8 @@ def test_staged_solver_on_solved_cube():
 def test_staged_solver_with_cross_reorientation(monkeypatch):
     """
     Test when Cross is solved on face F:
-    Solver should detect F, reorient to D via x_prime, then solve F2L/OLL/PLL.
+    Solver should inspect all 24 orientations, pick the orientation that places F on D (x'),
+    apply x' for free, then solve F2L/OLL/PLL locked to that frame of reference.
     """
     models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
     solver = StagedSolver(
@@ -92,12 +108,17 @@ def test_staged_solver_with_cross_reorientation(monkeypatch):
         lambda s, **kw: ([], 0, {}),
     )
     monkeypatch.setattr(
-        "cubesight_ml.search.staged_solver.is_goal_np", lambda s, spec: True
+        "cubesight_ml.search.staged_solver.is_goal_np",
+        lambda s, spec, **kw: True,
     )
 
     result = solver.solve(f_cross_cube)
     assert result.solved is True
-    assert "x_prime" in result.moves
+    assert (
+        "x'" in result.inspection_moves
+        or MOVE_TO_INDEX["x'"] in result.moves
+        or "x_prime" in result.moves
+    )
     assert result.failed_stage is None
 
 
@@ -240,3 +261,131 @@ def test_staged_solver_configurable_batch_size():
     for st, expected_bs in custom_bs.items():
         assert dict_solver.batch_sizes[st] == expected_bs
         assert dict_solver.searchers[st].batch_size == expected_bs
+
+
+def test_cross_inspection_orientation_selection():
+    """
+    Verify that inspection evaluates all 24 orientations and selects the easiest cross,
+    applying the inspection rotation for free (0 cost) and recording it in inspection_moves.
+    """
+    ops = TorchCubeOps(use_stm=True, device="cpu")
+    solved_46 = np.concatenate([SOLVED_FLAT, np.arange(6, dtype=np.int8)])
+    # Scramble D layer with 'D': breaks D cross, leaves U cross completely solved
+    d_scrambled = apply_action_sequence(solved_46, [MOVE_TO_INDEX["D"]], ops)
+
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+    solver = StagedSolver(
+        models=models, beam_width=10, max_steps=10, device="cpu"
+    )
+
+    result = solver.solve(d_scrambled)
+    assert result.solved is True
+    # Inspection should choose x2 to put the solved U cross onto D
+    assert result.inspection_moves == ["x2"]
+    assert result.moves[0] == MOVE_TO_INDEX["x2"]
+    # Inspection rotation cost should be 0.0 in stage_costs
+    assert result.stage_costs[Stage.CROSS] == 0.0
+    assert result.stage_lengths[Stage.CROSS] == 0
+    # Final state must be fully solved in the chosen orientation frame
+    assert result.final_state is not None
+    assert result.chosen_color == 0
+    assert is_goal_np(
+        result.final_state, STAGES[Stage.PLL], target_color=result.chosen_color
+    )
+
+
+def test_all_stages_locked_to_inspection_frame():
+    """
+    Verify that once inspection picks an orientation, all 4 goal checkers
+    have target_color set to the chosen reference color.
+    """
+    ops = TorchCubeOps(use_stm=True, device="cpu")
+    solved_46 = np.concatenate([SOLVED_FLAT, np.arange(6, dtype=np.int8)])
+    # Scramble F layer with 'F': breaks F cross, leaves B cross completely solved
+    f_scrambled = apply_action_sequence(solved_46, [MOVE_TO_INDEX["F"]], ops)
+
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+    solver = StagedSolver(
+        models=models, beam_width=10, max_steps=10, device="cpu"
+    )
+
+    result = solver.solve(f_scrambled)
+    assert result.solved is True
+    # Inspection should rotate B to D via x
+    assert result.inspection_moves == ["x"]
+    assert result.moves[0] == MOVE_TO_INDEX["x"]
+    # In canonical cube, B is face 5 (Blue). Rotated to D via x, chosen color is 5.
+    expected_chosen_color = 5
+    assert result.chosen_color == expected_chosen_color
+
+    for st in Stage:
+        assert (
+            solver.searchers[st].puzzle_handler.goal_checker.target_color
+            == expected_chosen_color
+        )
+    assert is_goal_np(
+        result.final_state,
+        STAGES[Stage.PLL],
+        target_color=expected_chosen_color,
+    )
+
+
+def test_color_locked_stages_rotation_invariance():
+    """
+    Verify that when a stage goal checker is locked to target_color,
+    the goal condition is satisfied regardless of which face target_color physically lands on
+    due to mid-solve rotations (x, y, z, etc.).
+    """
+    ops = TorchCubeOps(use_stm=True, device="cpu")
+    canonical_centers = np.arange(6, dtype=np.int8)
+    solved_46 = np.concatenate([SOLVED_FLAT, canonical_centers])
+
+    # Put White (color 0) on D via x2
+    white_on_d = apply_action_sequence(solved_46, [MOVE_TO_INDEX["x2"]], ops)
+    assert white_on_d[43] == 0
+
+    # Scramble the last layer (Yellow is on U, face 0) with a U turn
+    # This leaves Cross and F2L on White completely solved!
+    f2l_solved_on_white = apply_action_sequence(
+        white_on_d, [MOVE_TO_INDEX["U"]], ops
+    )
+
+    f2l_checker = StageGoalChecker(STAGES[Stage.F2L])
+    f2l_checker.set_target_color(0)
+
+    # 1. When White is on D:
+    assert (
+        f2l_checker.is_goal(
+            torch.tensor(f2l_solved_on_white).unsqueeze(0)
+        ).item()
+        is True
+    )
+    assert (
+        is_goal_np(
+            f2l_solved_on_white, STAGES[Stage.F2L], target_color=0
+        ).item()
+        is True
+    )
+
+    # 2. When White is rotated to other faces via cube rotations:
+    for rot in ["x", "x'", "x2", "y", "y'", "y2", "z", "z'", "z2"]:
+        rot_idx = MOVE_TO_INDEX[rot]
+        rotated = apply_action_sequence(f2l_solved_on_white, [rot_idx], ops)
+        rot_t = torch.tensor(rotated).unsqueeze(0)
+        # F2L on White must still be recognized as solved!
+        assert f2l_checker.is_goal(rot_t).item() is True, (
+            f"Failed on rotation {rot}"
+        )
+        assert (
+            is_goal_np(rotated, STAGES[Stage.F2L], target_color=0).item()
+            is True
+        )
+
+    # 3. But a turn affecting the White layer (e.g. D turn when White is on D) must break F2L
+    broken = apply_action_sequence(
+        f2l_solved_on_white, [MOVE_TO_INDEX["D"]], ops
+    )
+    assert (
+        f2l_checker.is_goal(torch.tensor(broken).unsqueeze(0)).item() is False
+    )
+    assert is_goal_np(broken, STAGES[Stage.F2L], target_color=0).item() is False

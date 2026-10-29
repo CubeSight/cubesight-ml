@@ -33,7 +33,11 @@ from cubesight_ml.stages.definitions import (
     STAGES,
     Stage,
 )
-from cubesight_ml.stages.goal_checker import StageGoalChecker
+from cubesight_ml.stages.goal_checker import (
+    CENTER_BASE6_WEIGHTS,
+    CENTER_ID_LUT,
+    StageGoalChecker,
+)
 from cubesight_ml.stages.goal_sampler import sample_goal_states
 from cubesight_ml.training.checkpointing import (
     extract_model_penalties,
@@ -490,6 +494,13 @@ class SolverAPI:
             elapsed = time.perf_counter() - start_time
 
             success = sol.solved
+            inspection_moves = [
+                INDEX_TO_MOVE[m]
+                if isinstance(m, int)
+                else str(m).replace("_prime", "'")
+                for m in sol.inspection_moves
+            ]
+            chosen_color = sol.chosen_color
             moves = [
                 INDEX_TO_MOVE[m]
                 if isinstance(m, int)
@@ -518,14 +529,22 @@ class SolverAPI:
                 for s in [Stage.CROSS, Stage.F2L, Stage.OLL, Stage.PLL]
             ]
         else:
+            inspection_moves = []
+            chosen_color = None
             stage_enum = Stage(stage)
             spec = STAGES[stage_enum]
             checker = StageGoalChecker(spec, device=self.device)
 
+            c_tuple = tuple(int(c) for c in centers[0])
+            h = int(
+                np.sum(np.array(c_tuple, dtype=np.int64) * CENTER_BASE6_WEIGHTS)
+            )
+            c_id = int(CENTER_ID_LUT[h])
+            checker.set_target_orientation(c_id)
+
             # Reorient cube to canonical centers if non-canonical
             prefix_rotations: list[str] = []
             curr_pieces = initial_pieces.copy()
-            c_tuple = tuple(int(c) for c in centers[0])
             if stage_enum != Stage.CROSS and c_tuple != (0, 1, 2, 3, 4, 5):
                 prefix_rotations = get_restore_rotations(c_tuple)
                 if prefix_rotations:
@@ -628,6 +647,8 @@ class SolverAPI:
         return {
             "success": success,
             "moves": moves,
+            "inspection_moves": inspection_moves,
+            "chosen_color": chosen_color,
             "total_length": len(moves),
             "stm_length": stm_len,
             "total_cost": cost,

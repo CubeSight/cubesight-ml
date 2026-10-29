@@ -6,11 +6,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cubesight_ml.cube.layout import (
-    FACE_TO_D_ROTATIONS,
-    apply_cube_rotation,
-)
 from cubesight_ml.cube.moves import (
+    CENTER_FORWARD_MAP,
+    CENTER_RESTORE_MAP,
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
     get_restore_rotations,
@@ -24,7 +22,6 @@ from cubesight_ml.stages.definitions import (
 )
 from cubesight_ml.stages.goal_checker import (
     StageGoalChecker,
-    detect_solved_cross_face,
     is_goal_np,
 )
 
@@ -36,6 +33,8 @@ class StagedSolution:
     solved: bool
     moves: list[int | str]
     formatted_solution: str = ""
+    inspection_moves: list[int | str] = field(default_factory=list)
+    chosen_color: int | None = None
     stage_moves: dict[Stage, list[int]] = field(default_factory=dict)
     stage_lengths: dict[Stage, int] = field(default_factory=dict)
     stage_stm_lengths: dict[Stage, int] = field(default_factory=dict)
@@ -211,7 +210,73 @@ class StagedSolver:
                     all_moves.append(rot_idx)
 
         # ------------------------------------------------------------------
-        # Stage 1: Color-Neutral Cross
+        # Inspection Phase: Rate all 24 orientations using Cross value heuristic
+        # ------------------------------------------------------------------
+        centers_list = list(CENTER_RESTORE_MAP.keys())
+        candidate_states: list[np.ndarray] = []
+        for c in centers_list:
+            fwd_names = CENTER_FORWARD_MAP[c]
+            fwd_indices = [MOVE_TO_INDEX[m] for m in fwd_names]
+            rotated = apply_action_sequence(
+                curr_state, fwd_indices, self.cube_ops
+            )
+            candidate_states.append(rotated)
+
+        candidate_tensor = torch.tensor(
+            np.stack(candidate_states), dtype=torch.long, device=self.device
+        )
+
+        cross_searcher = self.searchers[Stage.CROSS]
+        values_list: list[torch.Tensor] = []
+        eval_bs = max(1, min(cross_searcher.batch_size, 24))
+        for b_idx in range(0, 24, eval_bs):
+            chunk = candidate_tensor[b_idx : b_idx + eval_bs]
+            act_size = chunk.size(0)
+            if act_size < eval_bs:
+                pad = chunk[0:1].expand(eval_bs - act_size, -1)
+                padded = torch.cat([chunk, pad], dim=0)
+                pred = cross_searcher._get_model_predictions(padded).view(-1)[
+                    :act_size
+                ]
+            else:
+                pred = cross_searcher._get_model_predictions(chunk).view(-1)
+            values_list.append(pred)
+        cross_values = torch.cat(values_list, dim=0).cpu().numpy()
+
+        # Select best orientation minimizing Cross heuristic, breaking ties preferring fewer moves
+        best_orientation_id = min(
+            range(24),
+            key=lambda idx: (
+                round(float(cross_values[idx]), 5),
+                len(CENTER_FORWARD_MAP[centers_list[idx]]),
+                idx,
+            ),
+        )
+        inspection_rot_names = CENTER_FORWARD_MAP[
+            centers_list[best_orientation_id]
+        ]
+        inspection_rot_indices = [
+            MOVE_TO_INDEX[m] for m in inspection_rot_names
+        ]
+
+        # Apply inspection rotation to best position (for free: 0 cost/length penalty)
+        if inspection_rot_indices:
+            curr_state = apply_action_sequence(
+                curr_state, inspection_rot_indices, self.cube_ops
+            )
+            all_moves.extend(inspection_rot_indices)
+
+        # Determine chosen reference color on D after inspection
+        chosen_color = int(curr_state[43])
+
+        # Lock all 4 stages (Cross, F2L, OLL, PLL) to chosen reference color
+        for st in [Stage.CROSS, Stage.F2L, Stage.OLL, Stage.PLL]:
+            self.searchers[st].puzzle_handler.goal_checker.set_target_color(
+                chosen_color
+            )
+
+        # ------------------------------------------------------------------
+        # Stage 1: Cross (forced on chosen reference color)
         # ------------------------------------------------------------------
         cross_bw = self.beam_widths[Stage.CROSS]
         cross_ms = self.max_steps_dict[Stage.CROSS]
@@ -224,6 +289,8 @@ class StagedSolver:
             return StagedSolution(
                 solved=False,
                 moves=all_moves,
+                inspection_moves=inspection_rot_names,
+                chosen_color=chosen_color,
                 stage_moves=stage_moves,
                 stage_lengths=stage_lengths,
                 stage_stm_lengths=stage_stm_lengths,
@@ -243,33 +310,14 @@ class StagedSolver:
         stage_costs[Stage.CROSS] = cross_stats.get(
             "total_cost", float(len(cross_sol))
         )
-
-        # ------------------------------------------------------------------
-        # Stage 2: Detect Cross Face & Reorient to D
-        # ------------------------------------------------------------------
-        solved_face = detect_solved_cross_face(curr_state)
-        rot_cmd = FACE_TO_D_ROTATIONS[solved_face]
-
-        if rot_cmd != "id":
-            curr_pieces = apply_cube_rotation(curr_state[:40], rot_cmd)
-            curr_state = np.concatenate(
-                [curr_pieces, np.arange(6, dtype=np.int8)]
-            )
-            rot_idx = MOVE_TO_INDEX.get(rot_cmd, rot_cmd)
-            all_moves.append(rot_idx)
-
-        # Verify that D-cross is indeed now solved
-        curr_t = torch.tensor(curr_state, dtype=torch.long, device=self.device)
-        if curr_t.ndim == 1:
-            curr_t = curr_t.unsqueeze(0)
-        assert (
-            self.searchers[Stage.CROSS]
-            .puzzle_handler.is_solved(curr_t)[0]
-            .item()
+        assert is_goal_np(
+            curr_state,
+            STAGES[Stage.CROSS],
+            target_color=chosen_color,
         )
 
         # ------------------------------------------------------------------
-        # Stages 3..5: F2L -> OLL -> PLL (in standard D/U-frame)
+        # Stages 2..4: F2L -> OLL -> PLL (locked to chosen reference color)
         # ------------------------------------------------------------------
         for st in [Stage.F2L, Stage.OLL, Stage.PLL]:
             bw = self.beam_widths[st]
@@ -283,6 +331,8 @@ class StagedSolver:
                 return StagedSolution(
                     solved=False,
                     moves=all_moves,
+                    inspection_moves=inspection_rot_names,
+                    chosen_color=chosen_color,
                     stage_moves=stage_moves,
                     stage_lengths=stage_lengths,
                     stage_stm_lengths=stage_stm_lengths,
@@ -300,10 +350,14 @@ class StagedSolver:
             stage_lengths[st] = len(st_sol)
             stage_stm_lengths[st] = st_stats.get("stm_length", len(st_sol))
             stage_costs[st] = st_stats.get("total_cost", float(len(st_sol)))
-            assert is_goal_np(curr_state, STAGES[st])
+            assert is_goal_np(curr_state, STAGES[st], target_color=chosen_color)
 
         # Verify final state is completely solved
-        assert is_goal_np(curr_state, STAGES[Stage.PLL])
+        assert is_goal_np(
+            curr_state,
+            STAGES[Stage.PLL],
+            target_color=chosen_color,
+        )
 
         # Format human-readable solution string
         formatted_parts = [
@@ -320,6 +374,8 @@ class StagedSolver:
             solved=True,
             moves=all_moves,
             formatted_solution=formatted_str,
+            inspection_moves=inspection_rot_names,
+            chosen_color=chosen_color,
             stage_moves=stage_moves,
             stage_lengths=stage_lengths,
             stage_stm_lengths=stage_stm_lengths,

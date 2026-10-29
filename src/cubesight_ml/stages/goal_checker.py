@@ -7,10 +7,28 @@ from cubesight_ml.cube.moves import (
     CENTER_RESTORE_MAP,
     MOVE_CENTERS_54,
     MOVE_TO_INDEX,
+    NOOP_INDEX,
     ROTATION_MOVES,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.stages.definitions import CROSS_FACE_MASKS, StageSpec
+
+FACE_TO_D_ROTATIONS: dict[int, str | None] = {
+    0: "x2",
+    1: "z",
+    2: "x'",
+    3: None,
+    4: "z'",
+    5: "x",
+}
+FACE_TO_D_MOVE_INDICES: list[int] = [
+    MOVE_TO_INDEX["x2"],
+    MOVE_TO_INDEX["z"],
+    MOVE_TO_INDEX["x'"],
+    NOOP_INDEX,
+    MOVE_TO_INDEX["z'"],
+    MOVE_TO_INDEX["x"],
+]
 
 
 def _build_center_tables() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -59,12 +77,43 @@ def is_goal_np(
     states: np.ndarray,
     spec: StageSpec,
     centers: np.ndarray | None = None,
+    target_orientation: int | None = None,
+    target_color: int | None = None,
 ) -> np.ndarray:
     """
     Checks if flat cube state(s) satisfy the stage goal.
     Supports 1D (40,)/(46,) or batched (B, 40)/(B, 46) or (B, A, 40)/(B, A, 46).
     """
-    if states.shape[-1] >= 46:
+    if target_color is not None:
+        states_arr = np.asarray(states)
+        if states_arr.shape[-1] == 40 and centers is not None:
+            c_arr = np.asarray(centers)
+            if states_arr.ndim == 1:
+                states_arr = np.concatenate([states_arr, c_arr], axis=-1)
+            else:
+                c_expanded = np.broadcast_to(c_arr, (*states_arr.shape[:-1], 6))
+                states_arr = np.concatenate([states_arr, c_expanded], axis=-1)
+
+        ops = TorchCubeOps(use_stm=True, device="cpu")
+        states_t = torch.tensor(states_arr, dtype=torch.long)
+        orig_shape = states_t.shape
+        states_2d = states_t.reshape(-1, orig_shape[-1])
+        c_2d = states_2d[:, 40:46]
+        face_indices = (c_2d == target_color).nonzero(as_tuple=True)[1]
+        face_to_d = torch.tensor(FACE_TO_D_MOVE_INDICES, dtype=torch.long)
+        if not (face_indices == 3).all():
+            moves_to_d = face_to_d[face_indices]
+            states_2d = ops.apply_moves(states_2d, moves_to_d)
+        aligned = states_2d.reshape(orig_shape).numpy().astype(np.int8)
+        c = aligned[..., 40:46]
+        pieces = aligned[..., :40]
+        h = np.sum(c * CENTER_BASE6_WEIGHTS, axis=-1)
+        c_ids = CENTER_ID_LUT[h]
+        target = SOLVED_TABLE_24_NP[c_ids]
+    elif target_orientation is not None:
+        target = SOLVED_TABLE_24_NP[target_orientation]
+        pieces = states[..., :40] if states.shape[-1] >= 40 else states
+    elif states.shape[-1] >= 46:
         c = states[..., 40:46]
         pieces = states[..., :40]
         h = np.sum(c * CENTER_BASE6_WEIGHTS, axis=-1)
@@ -161,6 +210,41 @@ class StageGoalChecker(nn.Module):
                 CENTER_BASE6_WEIGHTS, dtype=torch.long, device=self.device
             ),
         )
+        self.target_orientation: int | None = None
+        self.target_color: int | None = None
+        self.cube_ops = TorchCubeOps(use_stm=True, device=self.device)
+        self.register_buffer(
+            "face_to_d_moves",
+            torch.tensor(
+                FACE_TO_D_MOVE_INDICES, dtype=torch.long, device=self.device
+            ),
+        )
+
+    def set_target_orientation(self, orientation_id: int | None) -> None:
+        """Locks the target orientation to a fixed orientation ID in [0, 23]."""
+        self.target_orientation = orientation_id
+
+    def set_target_color(self, color: int | None) -> None:
+        """Locks the frame of reference to a specific reference color on D."""
+        self.target_color = color
+
+    def align_to_d(self, states: torch.Tensor) -> torch.Tensor:
+        """Vectorized alignment of states so that target_color is rotated to face D (index 3)."""
+        if self.target_color is None or states.size(-1) < 46:
+            return states
+
+        orig_shape = states.shape
+        states_2d = states.reshape(-1, orig_shape[-1])
+        centers = states_2d[:, 40:46]
+        face_indices = (centers == self.target_color).nonzero(as_tuple=True)[1]
+        if (face_indices == 3).all():
+            return states
+
+        if self.cube_ops.device != states.device:
+            self.cube_ops.to(states.device)
+        moves_to_d = self.face_to_d_moves.to(states.device)[face_indices]
+        aligned_2d = self.cube_ops.apply_moves(states_2d, moves_to_d)
+        return aligned_2d.reshape(orig_shape)
 
     def is_goal(self, states: torch.Tensor) -> torch.Tensor:
         """
@@ -169,7 +253,17 @@ class StageGoalChecker(nn.Module):
         """
         states = states.to(device=self.device, dtype=torch.long)
 
-        if states.size(-1) >= 46:
+        if self.target_color is not None and states.size(-1) >= 46:
+            aligned = self.align_to_d(states)
+            c = aligned[..., 40:46]
+            h = (c * self.weights).sum(dim=-1)
+            c_ids = self.lut[h]
+            target = self.solved_table[c_ids]
+            pieces = aligned[..., :40]
+        elif self.target_orientation is not None:
+            target = self.solved_table[self.target_orientation]
+            pieces = states[..., :40]
+        elif states.size(-1) >= 46:
             c = states[..., 40:46]
             h = (c * self.weights).sum(dim=-1)
             c_ids = self.lut[h]
