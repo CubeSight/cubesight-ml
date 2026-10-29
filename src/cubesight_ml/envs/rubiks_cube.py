@@ -50,7 +50,7 @@ class RubiksCubeEnv(Env):
         use_stm: bool = True,
         use_double_moves: bool = True,
         include_rotations: bool = True,
-        scramble_face_moves_only: bool = False,
+        scramble_face_moves_only: bool = True,
         rng: np.random.Generator | None = None,
     ) -> None:
         self.batch_size = batch_size

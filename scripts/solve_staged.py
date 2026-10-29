@@ -234,6 +234,7 @@ def main() -> None:
         use_stm=use_stm,
         use_double_moves=use_double_moves,
         include_rotations=include_rotations,
+        scramble_face_moves_only=True,
         rng=rng,
     )
     scramble_env.reset()

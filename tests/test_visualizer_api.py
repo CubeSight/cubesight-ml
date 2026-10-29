@@ -208,14 +208,16 @@ def test_visualizer_server_endpoints():
 
 
 def test_solver_api_scramble_full_stm():
-    """Verify that api.scramble uses full STM and produces valid cube states."""
+    """Verify that api.scramble uses full STM and produces valid cube states while preserving canonical centers."""
     api = SolverAPI(device="cpu")
     api.scramble(depth=20)
-    _cp, co, _ep, eo, _centers = api.env.get_state_with_centers()
+    _cp, co, _ep, eo, centers = api.env.get_state_with_centers()
     # Scramble is non-trivial and produces valid orientations
     assert np.sum(co[0]) % 3 == 0
     assert np.sum(eo[0]) % 2 == 0
     assert not np.array_equal(api.env.get_state()[0], SOLVED_FLAT[:8])
+    # Cube starts and remains with White top, Green front (canonical centers 0..5)
+    assert np.array_equal(centers[0], np.arange(6))
 
 
 def test_solver_api_solve_cross_matches_center():

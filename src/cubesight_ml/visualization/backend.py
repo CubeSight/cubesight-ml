@@ -96,6 +96,7 @@ class SolverAPI:
             use_stm=True,
             use_double_moves=True,
             include_rotations=True,
+            scramble_face_moves_only=True,
         )
 
         self.checkpoints: dict[str, Path | None] = {
@@ -403,7 +404,7 @@ class SolverAPI:
                 if m in MOVE_TO_INDEX:
                     self.env.step(np.array([MOVE_TO_INDEX[m]], dtype=np.int32))
         else:
-            self.env.scramble(depth=depth)
+            self.env.scramble(depth=depth, face_moves_only=True)
 
         return self.get_state()
 
@@ -417,6 +418,7 @@ class SolverAPI:
         states = sample_goal_states(
             spec=spec,
             n=1,
+            fixed_orientation=0,
         )
         cp, co, ep, eo = from_flat(states)
         centers = states[:, 40:46] if states.shape[-1] >= 46 else None
