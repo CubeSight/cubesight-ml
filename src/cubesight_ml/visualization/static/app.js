@@ -100,6 +100,14 @@ function updateUIWithState(state) {
 
   // Update ergonomic penalties display based on active stage mode & model(s)
   updatePenaltiesDisplay();
+
+  // Update scramble display in top banner and sidebar
+  const scrambleStr = (state.scramble || "").trim();
+  const displayStr = scrambleStr || "None (Solved)";
+  const topText = document.getElementById("scramble-text");
+  if (topText) topText.textContent = displayStr;
+  const sideText = document.getElementById("sidebar-scramble-text");
+  if (sideText) sideText.textContent = displayStr;
 }
 
 function updateModelStageSelector(stage, modelInfo) {
@@ -246,6 +254,29 @@ function initEventListeners() {
       updatePenaltiesDisplay();
     });
   }
+
+  // Copy scramble sequence buttons
+  const setupCopyScrambleBtn = (btnId, labelId) => {
+    const btn = document.getElementById(btnId);
+    const label = document.getElementById(labelId);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const scramble = latestState?.scramble?.trim() || "";
+      if (!scramble || scramble.startsWith("None") || scramble.startsWith("Preconditioned")) return;
+      navigator.clipboard.writeText(scramble).then(() => {
+        btn.classList.add("copied");
+        if (label) label.textContent = "Copied!";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          if (label) label.textContent = "Copy";
+        }, 1500);
+      }).catch((e) => {
+        console.error("Clipboard write failed:", e);
+      });
+    });
+  };
+  setupCopyScrambleBtn("btn-copy-scramble-top", "copy-label-top");
+  setupCopyScrambleBtn("btn-copy-scramble-side", "copy-label-side");
 
   // Speed slider
   const speedSlider = document.getElementById("speed-slider");

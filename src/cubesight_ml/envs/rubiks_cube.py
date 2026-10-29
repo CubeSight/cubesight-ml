@@ -4,6 +4,7 @@ from typing import override
 import numpy as np
 
 from cubesight_ml.cube.moves import (
+    INDEX_TO_MOVE,
     INVERSE_MOVES_54,
     MOVE_CENTERS_54,
     MOVE_CO_54,
@@ -174,6 +175,7 @@ class RubiksCubeEnv(Env):
         self.co.fill(0)
         self.eo.fill(0)
         self.centers[:] = np.arange(6, dtype=np.int8)
+        self.last_scramble_actions = None
 
     def step(
         self, actions: np.ndarray
@@ -283,6 +285,7 @@ class RubiksCubeEnv(Env):
 
         try:
             actions_seq = self._get_scramble_actions(depth, depths=depths)
+            self.last_scramble_actions = actions_seq
             for d in range(depth):
                 self.step(actions_seq[d])
             return self.get_state()
@@ -290,6 +293,20 @@ class RubiksCubeEnv(Env):
             if self.scramble_face_moves_only != orig_setting:
                 self.scramble_face_moves_only = orig_setting
                 self._init_scramble_tables()
+
+    def get_last_scramble_moves(self, batch_idx: int = 0) -> list[str]:
+        """Returns move names for the last executed scramble for the specified batch index."""
+        if (
+            not hasattr(self, "last_scramble_actions")
+            or self.last_scramble_actions is None
+        ):
+            return []
+        actions = self.last_scramble_actions[:, batch_idx]
+        return [
+            INDEX_TO_MOVE[int(a)]
+            for a in actions
+            if a != self.NOOP and int(a) in INDEX_TO_MOVE
+        ]
 
     def scramble_yield(
         self, depth: int = 26, face_moves_only: bool | None = None

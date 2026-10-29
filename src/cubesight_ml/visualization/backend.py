@@ -99,6 +99,7 @@ class SolverAPI:
             scramble_face_moves_only=True,
         )
 
+        self.last_scramble: str = ""
         self.checkpoints: dict[str, Path | None] = {
             "cross": None,
             "f2l": None,
@@ -372,11 +373,13 @@ class SolverAPI:
                 "presets": penalties_presets.get("presets", []),
                 "selected": selected_preset,
             },
+            "scramble": self.last_scramble,
         }
 
     def reset(self) -> dict[str, Any]:
         """Resets cube to solved identity state."""
         self.env.reset()
+        self.last_scramble = ""
         return self.get_state()
 
     def apply_move(self, move_name: str) -> dict[str, Any]:
@@ -398,13 +401,16 @@ class SolverAPI:
                     m.strip() for m in custom_moves.split() if m.strip()
                 ]
             else:
-                moves_list = custom_moves
+                moves_list = list(custom_moves)
 
             for m in moves_list:
                 if m in MOVE_TO_INDEX:
                     self.env.step(np.array([MOVE_TO_INDEX[m]], dtype=np.int32))
+            self.last_scramble = " ".join(moves_list)
         else:
             self.env.scramble(depth=depth, face_moves_only=True)
+            scramble_moves = self.env.get_last_scramble_moves(batch_idx=0)
+            self.last_scramble = " ".join(scramble_moves)
 
         return self.get_state()
 
@@ -424,6 +430,7 @@ class SolverAPI:
         centers = states[:, 40:46] if states.shape[-1] >= 46 else None
         self.env.reset()
         self.env.load_state(cp, co, ep, eo, centers=centers)
+        self.last_scramble = f"Preconditioned ({stage.upper()} Done)"
         return self.get_state()
 
     def solve(
