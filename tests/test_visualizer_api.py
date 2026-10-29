@@ -233,7 +233,7 @@ def test_solver_api_scramble_full_stm():
 def test_solver_api_solve_cross_matches_center():
     """Verify that solved cross edges match the center in the visualizer."""
     api = SolverAPI(device="cpu")
-    api.scramble(depth=4)
+    api.scramble(custom_moves="D F D'")
 
     res = api.solve(stage="cross", beam_width=50, max_steps=20)
     assert res["success"] is True
