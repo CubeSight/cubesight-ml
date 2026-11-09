@@ -203,22 +203,10 @@ def parse_args() -> argparse.Namespace:
         help="Evaluation hook interval in steps.",
     )
     parser.add_argument(
-        "--eval_n_states",
+        "--eval_max_depth",
         type=int,
-        default=20,
-        help="Number of held-out validation states.",
-    )
-    parser.add_argument(
-        "--eval_beam_width",
-        type=int,
-        default=30,
-        help="Validation beam search width.",
-    )
-    parser.add_argument(
-        "--eval_max_steps",
-        type=int,
-        default=30,
-        help="Validation max search steps.",
+        default=26,
+        help="Maximum scramble depth for validation dataset (1000 states per depth).",
     )
 
     # Seeding
@@ -444,9 +432,8 @@ def main() -> None:
         loss_interval=args.loss_interval,
         save_interval=args.save_interval,
         eval_interval=args.eval_interval,
-        eval_n_states=args.eval_n_states,
-        eval_beam_width=args.eval_beam_width,
-        eval_max_steps=args.eval_max_steps,
+        eval_max_depth=args.eval_max_depth,
+        val_seed=data_seed,
         device=device,
         macs_per_sample=macs_per_sample,
     )

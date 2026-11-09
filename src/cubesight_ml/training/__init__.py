@@ -6,7 +6,11 @@ from cubesight_ml.training.checkpointing import (
 )
 from cubesight_ml.training.davi import train_davi
 from cubesight_ml.training.davi_targets import compute_davi_targets
-from cubesight_ml.training.evaluation import evaluate_stage
+from cubesight_ml.training.evaluation import (
+    evaluate_stage,
+    evaluate_validation_loss,
+    generate_validation_dataset,
+)
 from cubesight_ml.training.seeding import (
     make_worker_init_fn,
     resolve_seeds,
@@ -32,8 +36,10 @@ __all__ = [
     "TeeStream",
     "compute_davi_targets",
     "evaluate_stage",
+    "evaluate_validation_loss",
     "extract_dataloader_config",
     "extract_model_penalties",
+    "generate_validation_dataset",
     "is_json_serializable_primitive",
     "load_checkpoint",
     "load_model_from_checkpoint",

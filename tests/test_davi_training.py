@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -23,7 +24,7 @@ class DummyDataset(torch.utils.data.IterableDataset):
 
 
 def test_train_davi_with_move_penalties(tmp_path: Path):
-    """Tests that train_davi runs end-to-end with ergonomic penalties."""
+    """Tests that train_davi runs end-to-end with ergonomic penalties and validation loss."""
     device = "cpu"
     model_cfg = {
         "state_representation": "per_piece",
@@ -62,18 +63,27 @@ def test_train_davi_with_move_penalties(tmp_path: Path):
         loss_interval=1,
         save_interval=1,
         eval_interval=1,
-        eval_n_states=2,
-        eval_beam_width=2,
-        eval_max_steps=2,
+        eval_max_depth=3,
+        eval_states_per_depth=5,
         device=device,
         warmup_steps=1,
     )
 
-    # Check checkpoints created
+    # Check checkpoints and validation dataset created
     run_dir = tmp_path / "run"
     assert (run_dir / "best_model.pt").is_file()
     assert (run_dir / "best_eval_model.pt").is_file()
     assert (run_dir / "final_model.pt").is_file()
+    assert (run_dir / "validation_dataset.json").is_file()
+
+    val_data = json.loads(
+        (run_dir / "validation_dataset.json").read_text(encoding="utf-8")
+    )
+    assert len(val_data) == 15
+    assert [len(s.split()) for s in val_data] == [1] * 5 + [2] * 5 + [3] * 5
+
+    eval_ckpt = torch.load(run_dir / "best_eval_model.pt", weights_only=False)
+    assert "val_loss" in eval_ckpt["eval_metrics"]
 
 
 def test_best_model_resets_across_sync_periods(tmp_path: Path):
@@ -117,6 +127,8 @@ def test_best_model_resets_across_sync_periods(tmp_path: Path):
         loss_interval=1,
         save_interval=10,
         eval_interval=None,
+        eval_max_depth=2,
+        eval_states_per_depth=2,
         device=device,
         warmup_steps=0,
     )

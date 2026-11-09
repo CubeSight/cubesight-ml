@@ -20,7 +20,10 @@ from cubesight_ml.stages.definitions import StageSpec
 from cubesight_ml.stages.goal_checker import StageGoalChecker
 from cubesight_ml.training.checkpointing import save_checkpoint_and_stats
 from cubesight_ml.training.davi_targets import compute_davi_targets
-from cubesight_ml.training.evaluation import evaluate_stage
+from cubesight_ml.training.evaluation import (
+    evaluate_validation_loss,
+    generate_validation_dataset,
+)
 from cubesight_ml.training.target_sync import TargetSyncPolicy
 
 
@@ -50,9 +53,9 @@ def train_davi(
     loss_interval: int = 100,
     save_interval: int = 1000,
     eval_interval: int | None = 500,
-    eval_n_states: int = 20,
-    eval_beam_width: int = 30,
-    eval_max_steps: int = 20,
+    eval_max_depth: int = 26,
+    eval_states_per_depth: int = 1000,
+    val_seed: int = 42,
     device: torch.device | str = "cpu",
     macs_per_sample: float | None = None,
     save_sample_steps: dict[int, int] | None = None,
@@ -89,6 +92,23 @@ def train_davi(
 
     save_dir.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(log_dir=str(save_dir / "tensorboard"))
+
+    val_states: torch.Tensor | None = None
+    val_depths: torch.Tensor | None = None
+    if eval_max_depth > 0 and eval_states_per_depth > 0:
+        val_json_path = save_dir / "validation_dataset.json"
+        logger.info(
+            f"Generating validation dataset (depths 1..{eval_max_depth}, "
+            f"{eval_states_per_depth} states/depth) -> {val_json_path}"
+        )
+        val_states, val_depths, _ = generate_validation_dataset(
+            spec=spec,
+            max_depth=eval_max_depth,
+            states_per_depth=eval_states_per_depth,
+            use_double_moves=cube_ops.use_double_moves,
+            seed=val_seed,
+            save_path=val_json_path,
+        )
 
     save_sample_steps = save_sample_steps or {}
     save_steps = save_steps or []
@@ -127,10 +147,9 @@ def train_davi(
     cumulative_flops = 0.0
 
     running_loss = 0.0
+    last_mean_loss = float("inf")
     best_train_loss = float("inf")
-    best_eval_solve_rate = -1.0
-    best_eval_cost = float("inf")
-    best_eval_length = float("inf")
+    best_eval_loss = float("inf")
 
     start_time = time.perf_counter()
 
@@ -189,9 +208,12 @@ def train_davi(
             current_lr = optimizer.param_groups[0]["lr"]
             elapsed_time = time.perf_counter() - start_time
 
+            synced_this_step = False
+
             # 4. Logging & Diagnostics
             if step % loss_interval == 0:
                 mean_loss = running_loss / loss_interval
+                last_mean_loss = mean_loss
                 running_loss = 0.0
 
                 writer.add_scalar("Time/Elapsed_Seconds", elapsed_time, step)
@@ -270,6 +292,7 @@ def train_davi(
                 ):
                     target_model.load_state_dict(active_model.state_dict())
                     sync_policy.on_sync(step)
+                    synced_this_step = True
                     sync_count = getattr(sync_policy, "num_syncs", 0)
                     logger.info(
                         f"Step {step:05d}: Target network SYNCED "
@@ -280,102 +303,61 @@ def train_davi(
                     )
                     writer.add_scalar("Sync/step", step, step)
 
-                    # Reset best loss for the new post-sync period: comparing
-                    # loss only makes sense within a single sync period.
+                    # Reset best losses for the new post-sync period
                     best_train_loss = float("inf")
+                    best_eval_loss = float("inf")
 
-                    # Run evaluation on sync
-                    if eval_interval is not None:
-                        active_model.eval()
-                        eval_res = evaluate_stage(
-                            model=active_model,
-                            spec=spec,
-                            n_states=eval_n_states,
-                            beam_width=eval_beam_width,
-                            max_steps=eval_max_steps,
-                            device=device,
-                            move_penalties=move_penalties,
-                        )
-                        active_model.train()
-
-                        sr = eval_res["solve_rate"]
-                        ml = eval_res["mean_length"]
-                        mc = eval_res.get("mean_cost", ml)
-                        writer.add_scalar("Eval/solve_rate", sr, step)
-                        writer.add_scalar("Eval/mean_solution_length", ml, step)
-                        writer.add_scalar("Eval/mean_solution_cost", mc, step)
-                        writer.add_scalar(
-                            "Eval/mean_nodes", eval_res["mean_nodes"], step
-                        )
-                        writer.flush()
-
-                        logger.info(
-                            f"Eval @ Step {step:05d}: Solve Rate = "
-                            f"{sr * 100:.1f}%, Mean Len = {ml:.2f}, "
-                            f"Mean Cost = {mc:.2f}"
-                        )
-
-                        # Save best eval model
-                        if (sr > best_eval_solve_rate) or (
-                            sr == best_eval_solve_rate
-                            and (
-                                mc < best_eval_cost
-                                if has_penalties
-                                else ml < best_eval_length
-                            )
-                        ):
-                            best_eval_solve_rate = sr
-                            best_eval_cost = mc
-                            best_eval_length = ml
-                            save_checkpoint_and_stats(
-                                path=save_dir / "best_eval_model.pt",
-                                step=step,
-                                batch_size=batch_size,
-                                model=active_model,
-                                target_model=target_model,
-                                optimizer=optimizer,
-                                scheduler=scheduler,
-                                best_loss=best_train_loss,
-                                train_loss=mean_loss,
-                                current_lr=current_lr,
-                                elapsed_time=elapsed_time,
-                                stage=stage,
-                                model_config=model_config,
-                                sync_policy_state=sync_policy.state_dict(),
-                                num_syncs=getattr(sync_policy, "num_syncs", 0),
-                                eval_metrics=eval_res,
-                                move_penalties=move_penalties,
-                            )
-
-            # Periodic standalone evaluation (if not synced)
-            if (
+            # Run loss validation on sync or at periodic eval_interval
+            should_eval = (
                 eval_interval is not None
-                and step % eval_interval == 0
-                and getattr(sync_policy, "last_sync_step", -1) != step
-            ):
-                active_model.eval()
-                eval_res = evaluate_stage(
+                and val_states is not None
+                and val_depths is not None
+                and (synced_this_step or step % eval_interval == 0)
+            )
+            if should_eval:
+                eval_res = evaluate_validation_loss(
                     model=active_model,
-                    spec=spec,
-                    n_states=eval_n_states,
-                    beam_width=eval_beam_width,
-                    max_steps=eval_max_steps,
+                    val_states=val_states,
+                    val_depths=val_depths,
+                    batch_size=batch_size,
                     device=device,
-                    move_penalties=move_penalties,
                 )
-                active_model.train()
-                writer.add_scalar(
-                    "Eval/solve_rate", eval_res["solve_rate"], step
-                )
-                writer.add_scalar(
-                    "Eval/mean_solution_length", eval_res["mean_length"], step
-                )
-                writer.add_scalar(
-                    "Eval/mean_solution_cost",
-                    eval_res.get("mean_cost", eval_res["mean_length"]),
-                    step,
-                )
+                val_loss = eval_res["val_loss"]
+                writer.add_scalar("Eval/val_loss", val_loss, step)
                 writer.flush()
+
+                logger.info(
+                    f"Eval @ Step {step:05d}: Val Loss = {val_loss:.4f}"
+                )
+
+                if val_loss < best_eval_loss:
+                    best_eval_loss = val_loss
+                    save_checkpoint_and_stats(
+                        path=save_dir / "best_eval_model.pt",
+                        step=step,
+                        batch_size=batch_size,
+                        model=active_model,
+                        target_model=target_model,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        best_loss=best_train_loss,
+                        train_loss=(
+                            last_mean_loss
+                            if last_mean_loss != float("inf")
+                            else loss.item()
+                        ),
+                        current_lr=current_lr,
+                        elapsed_time=elapsed_time,
+                        stage=stage,
+                        model_config=model_config,
+                        sync_policy_state=sync_policy.state_dict(),
+                        num_syncs=getattr(sync_policy, "num_syncs", 0),
+                        cumulative_flops=cumulative_flops,
+                        cumulative_flops_active=cumulative_flops_active,
+                        cumulative_flops_target=cumulative_flops_target,
+                        eval_metrics=eval_res,
+                        move_penalties=move_penalties,
+                    )
 
             # 6. Checkpoint saving
             should_save = (
