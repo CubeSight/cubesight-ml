@@ -93,8 +93,8 @@ F2L_CONFIG: dict[str, Any] = {
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.999988,
-    "steps": 60_000,
+    "lr_decay": 0.999992,
+    "steps": 90_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
@@ -115,8 +115,8 @@ F2L_CONFIG: dict[str, Any] = {
     "num_workers": 4,
     # Logging, Validation & Checkpointing
     "loss_interval": 100,
-    "save_interval": 10_000,
-    "eval_interval": 3_000,
+    "save_interval": 15_000,
+    "eval_interval": 4_500,
     "eval_max_depth": 20,
     # Seeding
     "seed": 42,
