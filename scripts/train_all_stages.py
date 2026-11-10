@@ -36,39 +36,39 @@ from cubesight_ml.training.utils import ConsoleLogger
 # =============================================================================
 CROSS_CONFIG: dict[str, Any] = {
     "stage": "cross",
-    # Model architecture (ResMLP)
-    "state_representation": "per_sticker",
-    "n1": 700,
-    "n2": 643,
+    # Model architecture (ResMLP, ~1.0M params)
+    "state_representation": "per_piece",
+    "n1": 360,
+    "n2": 311,
     "n_r": 4,
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.9999993,
-    "steps": 1_000_000,
+    "lr_decay": 0.99993,
+    "steps": 10_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
     # Target sync policy
-    "sync_policy": "deepcubea",
+    "sync_policy": "plateau",
     "sync_interval": 100,
     "sync_loss_threshold": 0.05,
-    "min_steps_between_syncs": 500,
+    "min_steps_between_syncs": 200,
     "patience": 3,
-    "safety_ceiling": 2.0,
+    "safety_ceiling": 5.0,
     # Dataset & DataLoader
-    "batch_size": 10_000,
-    "scramble_depth": 30,
+    "batch_size": 5_120,
+    "scramble_depth": 14,
     "precondition_fraction": 0.0,
     "depth_sampling": "stratified",
     "include_depth_zero": False,
-    "use_double_moves": False,
+    "use_double_moves": True,
     "num_workers": 4,
     # Logging, Validation & Checkpointing
-    "loss_interval": 100,
-    "save_interval": 50_000,
-    "eval_interval": 25_000,
-    "eval_max_depth": 26,
+    "loss_interval": 50,
+    "save_interval": 2_500,
+    "eval_interval": 1_000,
+    "eval_max_depth": 14,
     # Seeding
     "seed": 42,
     "model_seed": None,
@@ -76,8 +76,8 @@ CROSS_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": None,
-    "move_penalties": None,
+    "exp_name": "first_pipeline",
+    "move_penalties": "presets/data_driven_penalties.json",
 }
 
 # =============================================================================
@@ -85,39 +85,39 @@ CROSS_CONFIG: dict[str, Any] = {
 # =============================================================================
 F2L_CONFIG: dict[str, Any] = {
     "stage": "f2l",
-    # Model architecture (ResMLP)
-    "state_representation": "per_sticker",
+    # Model architecture (ResMLP, ~4.0M params)
+    "state_representation": "per_piece",
     "n1": 700,
     "n2": 643,
     "n_r": 4,
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.9999993,
-    "steps": 1_000_000,
+    "lr_decay": 0.999988,
+    "steps": 60_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
     # Target sync policy
-    "sync_policy": "deepcubea",
-    "sync_interval": 100,
+    "sync_policy": "plateau",
+    "sync_interval": 500,
     "sync_loss_threshold": 0.05,
-    "min_steps_between_syncs": 500,
+    "min_steps_between_syncs": 300,
     "patience": 3,
-    "safety_ceiling": 2.0,
+    "safety_ceiling": 5.0,
     # Dataset & DataLoader
-    "batch_size": 10_000,
-    "scramble_depth": 30,
-    "precondition_fraction": 0.35,
+    "batch_size": 5_120,
+    "scramble_depth": 26,
+    "precondition_fraction": 0.25,
     "depth_sampling": "stratified",
     "include_depth_zero": False,
-    "use_double_moves": False,
+    "use_double_moves": True,
     "num_workers": 4,
     # Logging, Validation & Checkpointing
     "loss_interval": 100,
-    "save_interval": 50_000,
-    "eval_interval": 25_000,
-    "eval_max_depth": 26,
+    "save_interval": 10_000,
+    "eval_interval": 3_000,
+    "eval_max_depth": 20,
     # Seeding
     "seed": 42,
     "model_seed": None,
@@ -125,8 +125,8 @@ F2L_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": None,
-    "move_penalties": None,
+    "exp_name": "first_pipeline",
+    "move_penalties": "presets/data_driven_penalties.json",
 }
 
 # =============================================================================
@@ -134,39 +134,39 @@ F2L_CONFIG: dict[str, Any] = {
 # =============================================================================
 OLL_CONFIG: dict[str, Any] = {
     "stage": "oll",
-    # Model architecture (ResMLP)
-    "state_representation": "per_sticker",
-    "n1": 700,
-    "n2": 643,
+    # Model architecture (ResMLP, ~2.0M params)
+    "state_representation": "per_piece",
+    "n1": 512,
+    "n2": 448,
     "n_r": 4,
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.9999993,
-    "steps": 1_000_000,
+    "lr_decay": 0.999988,
+    "steps": 60_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
     # Target sync policy
-    "sync_policy": "deepcubea",
-    "sync_interval": 100,
+    "sync_policy": "plateau",
+    "sync_interval": 500,
     "sync_loss_threshold": 0.05,
-    "min_steps_between_syncs": 500,
+    "min_steps_between_syncs": 300,
     "patience": 3,
-    "safety_ceiling": 2.0,
+    "safety_ceiling": 5.0,
     # Dataset & DataLoader
-    "batch_size": 10_000,
-    "scramble_depth": 30,
+    "batch_size": 5_120,
+    "scramble_depth": 16,
     "precondition_fraction": 0.35,
     "depth_sampling": "stratified",
     "include_depth_zero": False,
-    "use_double_moves": False,
+    "use_double_moves": True,
     "num_workers": 4,
     # Logging, Validation & Checkpointing
     "loss_interval": 100,
-    "save_interval": 50_000,
-    "eval_interval": 25_000,
-    "eval_max_depth": 26,
+    "save_interval": 10_000,
+    "eval_interval": 3_000,
+    "eval_max_depth": 16,
     # Seeding
     "seed": 42,
     "model_seed": None,
@@ -174,8 +174,8 @@ OLL_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": None,
-    "move_penalties": None,
+    "exp_name": "first_pipeline",
+    "move_penalties": "presets/data_driven_penalties.json",
 }
 
 # =============================================================================
@@ -183,39 +183,39 @@ OLL_CONFIG: dict[str, Any] = {
 # =============================================================================
 PLL_CONFIG: dict[str, Any] = {
     "stage": "pll",
-    # Model architecture (ResMLP)
-    "state_representation": "per_sticker",
-    "n1": 700,
-    "n2": 643,
+    # Model architecture (ResMLP, ~2.0M params)
+    "state_representation": "per_piece",
+    "n1": 512,
+    "n2": 448,
     "n_r": 4,
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.9999993,
-    "steps": 1_000_000,
+    "lr_decay": 0.999988,
+    "steps": 60_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
     # Target sync policy
-    "sync_policy": "deepcubea",
-    "sync_interval": 100,
+    "sync_policy": "plateau",
+    "sync_interval": 500,
     "sync_loss_threshold": 0.05,
-    "min_steps_between_syncs": 500,
+    "min_steps_between_syncs": 300,
     "patience": 3,
-    "safety_ceiling": 2.0,
+    "safety_ceiling": 5.0,
     # Dataset & DataLoader
-    "batch_size": 10_000,
-    "scramble_depth": 30,
+    "batch_size": 5_120,
+    "scramble_depth": 20,
     "precondition_fraction": 0.35,
     "depth_sampling": "stratified",
     "include_depth_zero": False,
-    "use_double_moves": False,
+    "use_double_moves": True,
     "num_workers": 4,
     # Logging, Validation & Checkpointing
     "loss_interval": 100,
-    "save_interval": 50_000,
-    "eval_interval": 25_000,
-    "eval_max_depth": 26,
+    "save_interval": 10_000,
+    "eval_interval": 3_000,
+    "eval_max_depth": 20,
     # Seeding
     "seed": 42,
     "model_seed": None,
@@ -223,8 +223,8 @@ PLL_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": None,
-    "move_penalties": None,
+    "exp_name": "first_pipeline",
+    "move_penalties": "presets/data_driven_penalties.json",
 }
 
 STAGE_CONFIGS: dict[str, dict[str, Any]] = {
