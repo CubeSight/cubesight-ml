@@ -231,28 +231,30 @@ def test_solver_api_scramble_full_stm():
 
 
 def test_solver_api_solve_cross_matches_center():
-    """Verify that solved cross edges match the center in the visualizer."""
+    """Verify that solved cross edges match both D center and side centers in the visualizer."""
     api = SolverAPI(device="cpu")
-    api.scramble(custom_moves="D F D'")
+    for custom in [None, "D F D'", "d", "d F d'"]:
+        if custom is None:
+            api.scramble(depth=4)
+        else:
+            api.scramble(custom_moves=custom)
 
-    res = api.solve(stage="cross", beam_width=50, max_steps=20)
-    assert res["success"] is True
+        res = api.solve(stage="cross", beam_width=50, max_steps=20)
+        assert res["success"] is True
 
-    # Inspect last state
-    last_state = res["intermediate_states"][-1]
-    faces = last_state["faces"]
+        last_state = res["intermediate_states"][-1]
+        faces = last_state["faces"]
 
-    matched_cross_face = None
-    for f_name, grid in faces.items():
-        center = grid[4]
-        cross_edges = [grid[1], grid[3], grid[5], grid[7]]
-        if all(e == center for e in cross_edges):
-            matched_cross_face = f_name
-            break
-
-    assert matched_cross_face is not None, (
-        "Solved cross edges do not match the face's center piece!"
-    )
+        # D face must have all 4 cross edges matching the D center
+        d_grid = faces["D"]
+        assert all(d_grid[idx] == d_grid[4] for idx in (1, 3, 5, 7)), (
+            f"D cross edges do not match D center for scramble={custom}"
+        )
+        # Adjacent side stickers of the 4 D edges must also match their side centers
+        for side in ("F", "R", "B", "L"):
+            assert faces[side][7] == faces[side][4], (
+                f"Side {side} cross sticker misaligned with {side} center for scramble={custom}"
+            )
 
 
 def test_solver_api_solve_rotated_cube():
@@ -262,17 +264,35 @@ def test_solver_api_solve_rotated_cube():
     _, _, _, _, centers = api.env.get_state_with_centers()
     assert not np.array_equal(centers[0], np.arange(6))
 
-    # With just 'x', Green cross is already formed on D
+    # With just 'x', Blue cross is already formed on D
     res = api.solve(stage="cross", beam_width=50, max_steps=20)
     assert res["success"] is True
     assert res["moves"] == []
 
-    # Break cross on D with 'D' move
+    # Break cross on D with 'D' move; inspection either rotates solved U cross to D ('x2'/'z2') or fixes D ('D''/'E')
     api.apply_move("D")
     res2 = api.solve(stage="cross", beam_width=50, max_steps=20)
     assert res2["success"] is True
     assert len(res2["moves"]) == 1
-    assert res2["moves"][0] in ["D'", "E"]
+    assert res2["moves"][0] in ["D'", "E", "x2", "z2"]
+
+
+def test_solver_api_cross_color_neutral_non_yellow():
+    """Verify that stage='cross' in SolverAPI inspects all 24 orientations and solves on non-Yellow."""
+    api = SolverAPI(device="cpu")
+    # Scramble D (Yellow) cross while leaving U (White) cross solved
+    api.scramble(custom_moves="D F2 D' R2 D")
+    res = api.solve(stage="cross", beam_width=50, max_steps=10)
+    assert res["success"] is True
+    assert res["chosen_color"] != 3, (
+        f"Expected non-yellow cross color, got {res['chosen_color']}"
+    )
+    last_faces = res["intermediate_states"][-1]["faces"]
+    assert all(
+        last_faces["D"][idx] == res["chosen_color"] for idx in (1, 3, 4, 5, 7)
+    )
+    for side in ("F", "R", "B", "L"):
+        assert last_faces[side][7] == last_faces[side][4]
 
 
 def test_solver_api_default_zero_penalties_and_presets():

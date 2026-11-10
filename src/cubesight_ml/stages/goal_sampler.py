@@ -156,11 +156,17 @@ def sample_goal_states(
         free_c_arr = np.array(free_corners, dtype=np.int8)
         orig_free_c = t_cp[:, free_c_arr]
         cp[:, free_c_arr] = orig_free_c[rows, c_perm]
+        if orient_c_zero:
+            orig_free_co = t_co[:, free_c_arr]
+            co[:, free_c_arr] = orig_free_co[rows, c_perm]
 
     if k_e > 0:
         free_e_arr = np.array(free_edges, dtype=np.int8)
         orig_free_e = t_ep[:, free_e_arr]
         ep[:, free_e_arr] = orig_free_e[rows, e_perm]
+        if orient_e_zero:
+            orig_free_eo = t_eo[:, free_e_arr]
+            eo[:, free_e_arr] = orig_free_eo[rows, e_perm]
 
     if k_c > 0 and not orient_c_zero:
         free_c_arr = np.array(free_corners, dtype=np.int8)

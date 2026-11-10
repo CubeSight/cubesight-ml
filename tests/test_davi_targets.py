@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from cubesight_ml.cube.layout import SOLVED_FLAT
+from cubesight_ml.cube.moves import MOVE_TO_INDEX
 from cubesight_ml.cube.torch_ops import TorchCubeOps
 from cubesight_ml.stages.definitions import CROSS_SPEC, PLL_SPEC
 from cubesight_ml.stages.goal_checker import StageGoalChecker
@@ -156,3 +157,36 @@ def test_davi_targets_with_54_move_costs_and_goal():
     # For other moves, candidate cost is 1.0 + 10.0 = 11.0.
     # Minimum is 3.5!
     assert torch.isclose(targets[0], torch.tensor(3.5))
+
+
+def test_davi_targets_aligns_children_to_parent_d_color():
+    """Verify compute_davi_targets aligns 46-d child states to keep parent's D color on D."""
+    ops = TorchCubeOps(use_stm=True, include_rotations=True, device="cpu")
+    checker = StageGoalChecker(CROSS_SPEC, device="cpu")
+    model = DummyValueModel(constant_val=10.0)
+
+    # Start with solved cube (Yellow=3 on D) and apply wide move 'r'
+    # 'r' moves Yellow from D to F and breaks the Yellow cross by 1 wide move ('r'').
+    # Rotate cube back by x' so Yellow=3 is back on D, making it 1 wide move ('r' -> aligned) away from solved Yellow cross,
+    # while Blue=5 cross on B is NOT solved.
+    solved_46 = torch.tensor(
+        np.concatenate([SOLVED_FLAT, np.arange(6, dtype=np.int8)]),
+        dtype=torch.long,
+    ).unsqueeze(0)
+    after_r = ops.apply_moves(
+        solved_46, torch.tensor([MOVE_TO_INDEX["r"]], dtype=torch.long)
+    )
+    parent = ops.apply_moves(
+        after_r, torch.tensor([MOVE_TO_INDEX["x'"]], dtype=torch.long)
+    )
+    assert parent[0, 43].item() == 3  # Yellow is on D
+    assert not checker.is_goal(parent).item()
+
+    # Action r' on parent solves the Yellow cross (while moving Yellow to B, which align_states_to_colors rotates back to D)
+    targets = compute_davi_targets(
+        target_model=model,
+        parents=parent,
+        cube_ops=ops,
+        goal_checker=checker,
+    )
+    assert torch.isclose(targets[0], torch.tensor(1.0))

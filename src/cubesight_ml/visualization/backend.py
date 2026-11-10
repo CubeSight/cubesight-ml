@@ -12,9 +12,10 @@ from cubesight_ml.cube.layout import (
     to_flat,
 )
 from cubesight_ml.cube.moves import (
+    CENTER_FORWARD_MAP,
+    CENTER_RESTORE_MAP,
     INDEX_TO_MOVE,
     MOVE_TO_INDEX,
-    get_restore_rotations,
     parse_move_penalties,
 )
 from cubesight_ml.cube.torch_ops import TorchCubeOps
@@ -34,8 +35,7 @@ from cubesight_ml.stages.definitions import (
     Stage,
 )
 from cubesight_ml.stages.goal_checker import (
-    CENTER_BASE6_WEIGHTS,
-    CENTER_ID_LUT,
+    FACE_TO_D_ROTATIONS,
     StageGoalChecker,
 )
 from cubesight_ml.stages.goal_sampler import sample_goal_states
@@ -58,17 +58,24 @@ class DistanceMockModel(nn.Module):
         self.checker = StageGoalChecker(spec, device="cpu")
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        masks = self.checker.masks.to(x.device)
+        if self.checker.device != x.device:
+            self.checker.to(x.device)
+            self.checker.device = x.device
+        masks = self.checker.masks
         if x.size(-1) >= 46:
             c = x[..., 40:46].long()
-            h = (c * self.checker.weights.to(x.device)).sum(dim=-1)
-            c_ids = self.checker.lut.to(x.device)[h]
-            target = self.checker.solved_table.to(x.device)[c_ids]
-            x_pieces = x[..., :40]
+            h = (c * self.checker.weights).sum(dim=-1)
+            c_ids = self.checker.lut[h]
+            target = self.checker.solved_table[c_ids]
+            x_pieces = x[..., :40].long()
         else:
-            target = self.checker.solved_flat.to(x.device)
-            x_pieces = x
+            c_ids = 0
+            target = self.checker.solved_flat
+            x_pieces = x.long()
 
+        target = self.checker._apply_oriented_piece_targets(
+            x_pieces, target, c_ids
+        )
         x_expanded = x_pieces.unsqueeze(-2)
         target_expanded = (
             target.unsqueeze(-2) if target.ndim == x_pieces.ndim else target
@@ -530,30 +537,17 @@ class SolverAPI:
             ]
         else:
             inspection_moves = []
-            chosen_color = None
             stage_enum = Stage(stage)
             spec = STAGES[stage_enum]
             checker = StageGoalChecker(spec, device=self.device)
+            rot_ops = TorchCubeOps(use_stm=True, device=self.device)
 
-            c_tuple = tuple(int(c) for c in centers[0])
-            h = int(
-                np.sum(np.array(c_tuple, dtype=np.int64) * CENTER_BASE6_WEIGHTS)
+            curr_flat = (
+                initial_pieces[0]
+                if initial_pieces.ndim == 2
+                else initial_pieces
             )
-            c_id = int(CENTER_ID_LUT[h])
-            checker.set_target_orientation(c_id)
-
-            # Reorient cube to canonical centers if non-canonical
-            prefix_rotations: list[str] = []
-            curr_pieces = initial_pieces.copy()
-            if stage_enum != Stage.CROSS and c_tuple != (0, 1, 2, 3, 4, 5):
-                prefix_rotations = get_restore_rotations(c_tuple)
-                if prefix_rotations:
-                    rot_ops = TorchCubeOps(use_stm=True, device=self.device)
-                    for r_name in prefix_rotations:
-                        r_idx = MOVE_TO_INDEX[r_name]
-                        curr_pieces = apply_action_sequence(
-                            curr_pieces, [r_idx], rot_ops
-                        )
+            state_46 = np.concatenate([curr_flat[:40], centers[0]])
 
             handler = BeamSearchRubiksCubeHandler(
                 goal_checker=checker,
@@ -570,11 +564,67 @@ class SolverAPI:
                 use_stm=True,
                 device=self.device,
             )
-            initial_centers = (
-                np.arange(6, dtype=np.int8) if prefix_rotations else centers[0]
-            )
-            curr_flat = curr_pieces[0] if curr_pieces.ndim == 2 else curr_pieces
-            state_46 = np.concatenate([curr_flat[:40], initial_centers])
+
+            if stage_enum == Stage.CROSS:
+                centers_list = list(CENTER_RESTORE_MAP.keys())
+                candidate_states: list[np.ndarray] = []
+                for c in centers_list:
+                    fwd_names = CENTER_FORWARD_MAP[c]
+                    fwd_indices = [MOVE_TO_INDEX[m] for m in fwd_names]
+                    rotated = apply_action_sequence(
+                        state_46, fwd_indices, rot_ops
+                    )
+                    candidate_states.append(rotated)
+
+                candidate_tensor = torch.tensor(
+                    np.stack(candidate_states),
+                    dtype=torch.long,
+                    device=self.device,
+                )
+                checker.set_target_color(None)
+                values_list: list[torch.Tensor] = []
+                eval_bs = max(1, min(searcher.batch_size, 24))
+                for b_idx in range(0, 24, eval_bs):
+                    chunk = candidate_tensor[b_idx : b_idx + eval_bs]
+                    act_size = chunk.size(0)
+                    if act_size < eval_bs:
+                        pad = chunk[0:1].expand(eval_bs - act_size, -1)
+                        padded = torch.cat([chunk, pad], dim=0)
+                        pred = searcher._get_model_predictions(padded).view(-1)[
+                            :act_size
+                        ]
+                    else:
+                        pred = searcher._get_model_predictions(chunk).view(-1)
+                    values_list.append(pred)
+                cross_values = torch.cat(values_list, dim=0).cpu().numpy()
+                already_solved = (
+                    handler.is_solved(candidate_tensor).cpu().numpy()
+                )
+                cross_values[already_solved] = -1.0
+
+                best_orientation_id = min(
+                    range(24),
+                    key=lambda idx: (
+                        round(float(cross_values[idx]), 5),
+                        len(CENTER_FORWARD_MAP[centers_list[idx]]),
+                        idx,
+                    ),
+                )
+                inspection_rot_names = CENTER_FORWARD_MAP[
+                    centers_list[best_orientation_id]
+                ]
+                inspection_rot_indices = [
+                    MOVE_TO_INDEX[m] for m in inspection_rot_names
+                ]
+                if inspection_rot_indices:
+                    state_46 = apply_action_sequence(
+                        state_46, inspection_rot_indices, rot_ops
+                    )
+                    inspection_moves = list(inspection_rot_names)
+
+            chosen_color = int(state_46[43])
+            checker.set_target_color(chosen_color)
+
             state_tensor = torch.tensor(
                 state_46, dtype=torch.long, device=self.device
             )
@@ -584,20 +634,30 @@ class SolverAPI:
             elapsed = time.perf_counter() - start_time
 
             success = sol_indices is not None
-            stage_sol_moves = (
-                [INDEX_TO_MOVE[i] for i in sol_indices]
-                if sol_indices is not None
-                else []
-            )
-            moves = prefix_rotations + stage_sol_moves
+            stage_sol_moves: list[str] = []
+            if sol_indices is not None:
+                state_46 = apply_action_sequence(state_46, sol_indices, rot_ops)
+                stage_sol_moves = [INDEX_TO_MOVE[i] for i in sol_indices]
+                if int(state_46[43]) != chosen_color:
+                    face_idx = int(
+                        np.where(state_46[40:46] == chosen_color)[0][0]
+                    )
+                    rot_to_d = FACE_TO_D_ROTATIONS[face_idx]
+                    if rot_to_d is not None:
+                        state_46 = apply_action_sequence(
+                            state_46, [MOVE_TO_INDEX[rot_to_d]], rot_ops
+                        )
+                        stage_sol_moves.append(rot_to_d)
+
+            moves = inspection_moves + stage_sol_moves
             stm_len = stats.get("stm_length", 0)
             cost = stats.get("total_cost", 0.0)
             breakdown = [
                 {
                     "stage": stage,
                     "solved": success,
-                    "moves": moves,
-                    "length": len(moves),
+                    "moves": stage_sol_moves,
+                    "length": len(stage_sol_moves),
                     "stm_length": stm_len,
                     "cost": cost,
                 }

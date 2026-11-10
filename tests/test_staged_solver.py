@@ -36,17 +36,24 @@ class StageDistanceMock(nn.Module):
         self.checker = StageGoalChecker(spec, device="cpu")
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        masks = self.checker.masks.to(x.device)
+        if self.checker.device != x.device:
+            self.checker.to(x.device)
+            self.checker.device = x.device
+        masks = self.checker.masks
         if x.size(-1) >= 46:
             c = x[..., 40:46].long()
-            h = (c * self.checker.weights.to(x.device)).sum(dim=-1)
-            c_ids = self.checker.lut.to(x.device)[h]
-            target = self.checker.solved_table.to(x.device)[c_ids]
-            x_pieces = x[..., :40]
+            h = (c * self.checker.weights).sum(dim=-1)
+            c_ids = self.checker.lut[h]
+            target = self.checker.solved_table[c_ids]
+            x_pieces = x[..., :40].long()
         else:
-            target = self.checker.solved_flat.to(x.device)
-            x_pieces = x
+            c_ids = 0
+            target = self.checker.solved_flat
+            x_pieces = x.long()
 
+        target = self.checker._apply_oriented_piece_targets(
+            x_pieces, target, c_ids
+        )
         x_expanded = x_pieces.unsqueeze(-2)
         target_expanded = (
             target.unsqueeze(-2) if target.ndim == x_pieces.ndim else target
@@ -389,3 +396,27 @@ def test_color_locked_stages_rotation_invariance():
         f2l_checker.is_goal(torch.tensor(broken).unsqueeze(0)).item() is False
     )
     assert is_goal_np(broken, STAGES[Stage.F2L], target_color=0).item() is False
+
+
+def test_staged_solver_reused_instance_resets_target_color():
+    """Verify calling solver.solve() multiple times resets target_color before inspection."""
+    ops = TorchCubeOps(use_stm=True, device="cpu")
+    solved_46 = np.concatenate([SOLVED_FLAT, np.arange(6, dtype=np.int8)])
+
+    models = {st: StageDistanceMock(STAGES[st]) for st in Stage}
+    solver = StagedSolver(
+        models=models, beam_width=10, max_steps=10, device="cpu"
+    )
+
+    # First solve: F scrambled -> picks Blue (color 5) on B rotated to D via x
+    f_scrambled = apply_action_sequence(solved_46, [MOVE_TO_INDEX["F"]], ops)
+    res1 = solver.solve(f_scrambled)
+    assert res1.solved is True
+    assert res1.chosen_color == 5
+
+    # Second solve on same StagedSolver instance: D scrambled -> must pick White (color 0) via x2, not stay locked to 5!
+    d_scrambled = apply_action_sequence(solved_46, [MOVE_TO_INDEX["D"]], ops)
+    res2 = solver.solve(d_scrambled)
+    assert res2.solved is True
+    assert res2.chosen_color == 0
+    assert res2.inspection_moves == ["x2"]

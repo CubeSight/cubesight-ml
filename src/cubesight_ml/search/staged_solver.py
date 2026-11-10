@@ -21,6 +21,7 @@ from cubesight_ml.stages.definitions import (
     Stage,
 )
 from cubesight_ml.stages.goal_checker import (
+    FACE_TO_D_ROTATIONS,
     StageGoalChecker,
     is_goal_np,
 )
@@ -227,6 +228,7 @@ class StagedSolver:
         )
 
         cross_searcher = self.searchers[Stage.CROSS]
+        cross_searcher.puzzle_handler.goal_checker.set_target_color(None)
         values_list: list[torch.Tensor] = []
         eval_bs = max(1, min(cross_searcher.batch_size, 24))
         for b_idx in range(0, 24, eval_bs):
@@ -242,6 +244,12 @@ class StagedSolver:
                 pred = cross_searcher._get_model_predictions(chunk).view(-1)
             values_list.append(pred)
         cross_values = torch.cat(values_list, dim=0).cpu().numpy()
+        already_solved = (
+            cross_searcher.puzzle_handler.is_solved(candidate_tensor)
+            .cpu()
+            .numpy()
+        )
+        cross_values[already_solved] = -1.0
 
         # Select best orientation minimizing Cross heuristic, breaking ties preferring fewer moves
         best_orientation_id = min(
@@ -301,6 +309,15 @@ class StagedSolver:
             )
 
         curr_state = apply_action_sequence(curr_state, cross_sol, self.cube_ops)
+        if int(curr_state[43]) != chosen_color:
+            face_idx = int(np.where(curr_state[40:46] == chosen_color)[0][0])
+            rot_to_d = FACE_TO_D_ROTATIONS[face_idx]
+            if rot_to_d is not None:
+                r_idx = MOVE_TO_INDEX[rot_to_d]
+                curr_state = apply_action_sequence(
+                    curr_state, [r_idx], self.cube_ops
+                )
+                cross_sol = [*cross_sol, r_idx]
         all_moves.extend(cross_sol)
         stage_moves[Stage.CROSS] = cross_sol
         stage_lengths[Stage.CROSS] = len(cross_sol)
@@ -345,6 +362,17 @@ class StagedSolver:
             curr_state = apply_action_sequence(
                 curr_state, st_sol, self.cube_ops
             )
+            if int(curr_state[43]) != chosen_color:
+                face_idx = int(
+                    np.where(curr_state[40:46] == chosen_color)[0][0]
+                )
+                rot_to_d = FACE_TO_D_ROTATIONS[face_idx]
+                if rot_to_d is not None:
+                    r_idx = MOVE_TO_INDEX[rot_to_d]
+                    curr_state = apply_action_sequence(
+                        curr_state, [r_idx], self.cube_ops
+                    )
+                    st_sol = [*st_sol, r_idx]
             all_moves.extend(st_sol)
             stage_moves[st] = st_sol
             stage_lengths[st] = len(st_sol)

@@ -11,7 +11,7 @@ def compute_davi_targets(
     parents: torch.Tensor,
     cube_ops: TorchCubeOps,
     goal_checker: StageGoalChecker,
-    chunk_size: int = 10000,
+    chunk_size: int = 100_000,
     clamp_min: float | None = 0.0,
     move_costs: torch.Tensor | None = None,
 ) -> torch.Tensor:
@@ -34,8 +34,11 @@ def compute_davi_targets(
     Returns:
         Tensor (B,) containing Bellman cost-to-go targets.
     """
-    # 1. Expand children on device
+    # 1. Expand children on device and align to parent's D-center color
     children = cube_ops.expand(parents)  # (B, A, state_dim)
+    if parents.size(-1) >= 46:
+        parent_colors = parents[:, 43]
+        children = goal_checker.align_states_to_colors(children, parent_colors)
     b, a, _ = children.shape
 
     # 2. Identify goal children
@@ -43,10 +46,12 @@ def compute_davi_targets(
 
     # 3. Evaluate target model on children in chunks
     flat_children = children.reshape(b * a, -1)
+    use_amp = flat_children.device.type == "cuda"
     val_chunks = []
-    for chunk in flat_children.split(chunk_size):
-        chunk_val = target_model(chunk)["value"].squeeze(-1).float()
-        val_chunks.append(chunk_val)
+    with torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
+        for chunk in flat_children.split(chunk_size):
+            chunk_val = target_model(chunk)["value"].squeeze(-1).float()
+            val_chunks.append(chunk_val)
 
     child_values = torch.cat(val_chunks, dim=0).view(b, a)
 

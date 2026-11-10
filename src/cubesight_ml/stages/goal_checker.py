@@ -31,8 +31,10 @@ FACE_TO_D_MOVE_INDICES: list[int] = [
 ]
 
 
-def _build_center_tables() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Precomputes 24 solved piece targets and base-6 center hash LUT."""
+def _build_center_tables() -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
+    """Precomputes 24 solved piece targets, U-orientation LUTs, and base-6 center hash LUT."""
     ops = TorchCubeOps(use_stm=True, device="cpu")
     centers_list = list(CENTER_RESTORE_MAP.keys())
     assert len(centers_list) == 24
@@ -58,6 +60,8 @@ def _build_center_tables() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
                 q.append(nxt)
 
     solved_table = np.empty((24, 40), dtype=np.int8)
+    u_co_by_piece = np.full((24, 8), -1, dtype=np.int8)
+    u_eo_by_piece = np.full((24, 12), -1, dtype=np.int8)
     solved_flat_t = torch.tensor(SOLVED_FLAT, dtype=torch.long).unsqueeze(0)
     for idx, c in enumerate(centers_list):
         moves = fwd[c]
@@ -65,12 +69,47 @@ def _build_center_tables() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         for m in moves:
             m_t = torch.tensor([m], dtype=torch.long)
             curr_t = ops.apply_moves(curr_t, m_t)
-        solved_table[idx] = curr_t.squeeze(0).numpy().astype(np.int8)
+        row = curr_t.squeeze(0).numpy().astype(np.int8)
+        solved_table[idx] = row
+        u_co_by_piece[idx, row[0:4]] = row[8:12]
+        u_eo_by_piece[idx, row[16:20]] = row[28:32]
 
-    return solved_table, lut, weights
+    return solved_table, lut, weights, u_co_by_piece, u_eo_by_piece
 
 
-SOLVED_TABLE_24_NP, CENTER_ID_LUT, CENTER_BASE6_WEIGHTS = _build_center_tables()
+(
+    SOLVED_TABLE_24_NP,
+    CENTER_ID_LUT,
+    CENTER_BASE6_WEIGHTS,
+    U_CO_BY_PIECE_24_NP,
+    U_EO_BY_PIECE_24_NP,
+) = _build_center_tables()
+
+
+def _apply_oriented_piece_targets_np(
+    pieces: np.ndarray,
+    target: np.ndarray,
+    c_ids: np.ndarray | int,
+    spec: StageSpec,
+) -> np.ndarray:
+    """Replaces U-layer target orientations using piece-ID lookup when spec has oriented pieces."""
+    if not (spec.oriented_corners or spec.oriented_edges):
+        return target
+    target = np.broadcast_to(target, pieces.shape).copy()
+    c_ids_arr = np.clip(np.asarray(c_ids), 0, 23)[..., None]
+    if spec.oriented_corners:
+        slots_c = list(spec.oriented_corners)
+        cp_u = np.clip(pieces[..., slots_c], 0, 7)
+        target[..., [8 + s for s in slots_c]] = U_CO_BY_PIECE_24_NP[
+            c_ids_arr, cp_u
+        ]
+    if spec.oriented_edges:
+        slots_e = list(spec.oriented_edges)
+        ep_u = np.clip(pieces[..., [16 + s for s in slots_e]], 0, 11)
+        target[..., [28 + s for s in slots_e]] = U_EO_BY_PIECE_24_NP[
+            c_ids_arr, ep_u
+        ]
+    return target
 
 
 def is_goal_np(
@@ -84,6 +123,7 @@ def is_goal_np(
     Checks if flat cube state(s) satisfy the stage goal.
     Supports 1D (40,)/(46,) or batched (B, 40)/(B, 46) or (B, A, 40)/(B, A, 46).
     """
+    orient_match: np.ndarray | bool = True
     if target_color is not None:
         states_arr = np.asarray(states)
         if states_arr.shape[-1] == 40 and centers is not None:
@@ -111,8 +151,17 @@ def is_goal_np(
         c_ids = CENTER_ID_LUT[h]
         target = SOLVED_TABLE_24_NP[c_ids]
     elif target_orientation is not None:
+        c_ids = target_orientation
         target = SOLVED_TABLE_24_NP[target_orientation]
         pieces = states[..., :40] if states.shape[-1] >= 40 else states
+        if states.shape[-1] >= 46:
+            c = states[..., 40:46]
+            h = np.sum(c * CENTER_BASE6_WEIGHTS, axis=-1)
+            orient_match = CENTER_ID_LUT[h] == target_orientation
+        elif centers is not None:
+            c = np.asarray(centers)
+            h = np.sum(c * CENTER_BASE6_WEIGHTS, axis=-1)
+            orient_match = CENTER_ID_LUT[h] == target_orientation
     elif states.shape[-1] >= 46:
         c = states[..., 40:46]
         pieces = states[..., :40]
@@ -126,15 +175,19 @@ def is_goal_np(
         target = SOLVED_TABLE_24_NP[c_ids]
         pieces = states
     else:
+        c_ids = 0
         target = SOLVED_FLAT
         pieces = states
 
+    target = _apply_oriented_piece_targets_np(pieces, target, c_ids, spec)
+
     if len(spec.masks) == 1:
         mask = spec.masks[0]
-        return ((pieces == target) | ~mask).all(axis=-1)
+        res = ((pieces == target) | ~mask).all(axis=-1)
+        return res & orient_match
 
     matches = [((pieces == target) | ~m).all(axis=-1) for m in spec.masks]
-    return np.any(matches, axis=0)
+    return np.any(matches, axis=0) & orient_match
 
 
 def detect_solved_cross_face(
@@ -210,6 +263,18 @@ class StageGoalChecker(nn.Module):
                 CENTER_BASE6_WEIGHTS, dtype=torch.long, device=self.device
             ),
         )
+        self.register_buffer(
+            "u_co_by_piece",
+            torch.tensor(
+                U_CO_BY_PIECE_24_NP, dtype=torch.long, device=self.device
+            ),
+        )
+        self.register_buffer(
+            "u_eo_by_piece",
+            torch.tensor(
+                U_EO_BY_PIECE_24_NP, dtype=torch.long, device=self.device
+            ),
+        )
         self.target_orientation: int | None = None
         self.target_color: int | None = None
         self.cube_ops = TorchCubeOps(use_stm=True, device=self.device)
@@ -228,15 +293,38 @@ class StageGoalChecker(nn.Module):
         """Locks the frame of reference to a specific reference color on D."""
         self.target_color = color
 
-    def align_to_d(self, states: torch.Tensor) -> torch.Tensor:
-        """Vectorized alignment of states so that target_color is rotated to face D (index 3)."""
-        if self.target_color is None or states.size(-1) < 46:
+    def align_states_to_colors(
+        self, states: torch.Tensor, target_colors: torch.Tensor | int
+    ) -> torch.Tensor:
+        """Vectorized alignment of states so that target_colors is rotated to face D (index 3).
+
+        Args:
+            states: Tensor of shape (..., 46) or (B, A, 46).
+            target_colors: Scalar int or Tensor of shape (B,) / (...,) matching leading dims.
+        """
+        if states.size(-1) < 46:
             return states
 
         orig_shape = states.shape
         states_2d = states.reshape(-1, orig_shape[-1])
         centers = states_2d[:, 40:46]
-        face_indices = (centers == self.target_color).nonzero(as_tuple=True)[1]
+
+        if isinstance(target_colors, int):
+            colors_2d = target_colors
+        else:
+            tc = target_colors.to(device=states.device, dtype=centers.dtype)
+            if (
+                tc.ndim == 1
+                and states.ndim == 3
+                and tc.size(0) == orig_shape[0]
+            ):
+                tc = tc.unsqueeze(1).expand(orig_shape[0], orig_shape[1])
+            colors_2d = tc.reshape(-1, 1)
+
+        if (centers[:, 3:4] == colors_2d).all():
+            return states
+
+        face_indices = (centers == colors_2d).to(torch.int8).argmax(dim=1)
         if (face_indices == 3).all():
             return states
 
@@ -246,12 +334,51 @@ class StageGoalChecker(nn.Module):
         aligned_2d = self.cube_ops.apply_moves(states_2d, moves_to_d)
         return aligned_2d.reshape(orig_shape)
 
+    def align_to_d(self, states: torch.Tensor) -> torch.Tensor:
+        """Vectorized alignment of states so that target_color is rotated to face D (index 3)."""
+        if self.target_color is None or states.size(-1) < 46:
+            return states
+        return self.align_states_to_colors(states, self.target_color)
+
+    def _apply_oriented_piece_targets(
+        self,
+        pieces: torch.Tensor,
+        target: torch.Tensor,
+        c_ids: torch.Tensor | int,
+    ) -> torch.Tensor:
+        if not (self.spec.oriented_corners or self.spec.oriented_edges):
+            return target
+        target = target.expand_as(pieces).clone()
+        c_ids_t = (
+            (
+                torch.tensor(c_ids, dtype=torch.long, device=pieces.device)
+                if isinstance(c_ids, int)
+                else c_ids
+            )
+            .clamp(0, 23)
+            .unsqueeze(-1)
+        )
+        if self.spec.oriented_corners:
+            slots_c = list(self.spec.oriented_corners)
+            cp_u = pieces[..., slots_c].clamp(0, 7)
+            target[..., [8 + s for s in slots_c]] = self.u_co_by_piece[
+                c_ids_t, cp_u
+            ]
+        if self.spec.oriented_edges:
+            slots_e = list(self.spec.oriented_edges)
+            ep_u = pieces[..., [16 + s for s in slots_e]].clamp(0, 11)
+            target[..., [28 + s for s in slots_e]] = self.u_eo_by_piece[
+                c_ids_t, ep_u
+            ]
+        return target
+
     def is_goal(self, states: torch.Tensor) -> torch.Tensor:
         """
         Returns boolean tensor indicating which states satisfy the stage goal.
         Works for states of shape (B, 40)/(B, 46) or (B, A, 40)/(B, A, 46).
         """
         states = states.to(device=self.device, dtype=torch.long)
+        orient_match: torch.Tensor | bool = True
 
         if self.target_color is not None and states.size(-1) >= 46:
             aligned = self.align_to_d(states)
@@ -261,8 +388,13 @@ class StageGoalChecker(nn.Module):
             target = self.solved_table[c_ids]
             pieces = aligned[..., :40]
         elif self.target_orientation is not None:
+            c_ids = self.target_orientation
             target = self.solved_table[self.target_orientation]
             pieces = states[..., :40]
+            if states.size(-1) >= 46:
+                c = states[..., 40:46]
+                h = (c * self.weights).sum(dim=-1)
+                orient_match = self.lut[h] == self.target_orientation
         elif states.size(-1) >= 46:
             c = states[..., 40:46]
             h = (c * self.weights).sum(dim=-1)
@@ -270,11 +402,15 @@ class StageGoalChecker(nn.Module):
             target = self.solved_table[c_ids]
             pieces = states[..., :40]
         else:
+            c_ids = 0
             target = self.solved_table[0]
             pieces = states
 
+        target = self._apply_oriented_piece_targets(pieces, target, c_ids)
+
         if self.num_masks == 1:
-            return ((pieces == target) | ~self.masks[0]).all(dim=-1)
+            res = ((pieces == target) | ~self.masks[0]).all(dim=-1)
+            return res & orient_match
 
         # Broadcast states (..., 1, 40) against masks (num_masks, 40)
         expanded_pieces = pieces.unsqueeze(-2)
@@ -284,4 +420,4 @@ class StageGoalChecker(nn.Module):
         matches = ((expanded_pieces == expanded_target) | ~self.masks).all(
             dim=-1
         )
-        return matches.any(dim=-1)
+        return matches.any(dim=-1) & orient_match
