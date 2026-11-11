@@ -93,8 +93,8 @@ F2L_CONFIG: dict[str, Any] = {
     "dropout_rate": 0.0,
     # Optimization
     "lr": 1e-3,
-    "lr_decay": 0.999992,
-    "steps": 90_000,
+    "lr_decay": 0.9999947,
+    "steps": 135_000,
     "grad_accumulation_steps": 1,
     "clip_norm": 1.0,
     "checkpoint": None,
@@ -107,7 +107,7 @@ F2L_CONFIG: dict[str, Any] = {
     "safety_ceiling": 5.0,
     # Dataset & DataLoader
     "batch_size": 5_120,
-    "scramble_depth": 26,
+    "scramble_depth": 22,
     "precondition_fraction": 0.25,
     "depth_sampling": "stratified",
     "include_depth_zero": False,
@@ -115,8 +115,8 @@ F2L_CONFIG: dict[str, Any] = {
     "num_workers": 4,
     # Logging, Validation & Checkpointing
     "loss_interval": 100,
-    "save_interval": 15_000,
-    "eval_interval": 4_500,
+    "save_interval": 22_500,
+    "eval_interval": 6_750,
     "eval_max_depth": 20,
     # Seeding
     "seed": 42,
