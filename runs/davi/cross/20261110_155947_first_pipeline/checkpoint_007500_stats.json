@@ -1,0 +1,17 @@
+{
+  "step": 7500,
+  "samples": 38400000,
+  "stage": "cross",
+  "num_syncs": 5,
+  "target_sample_counts": null,
+  "train_loss": 0.023865437135100365,
+  "best_loss": 0.023543968982994556,
+  "lr": 0.0005915444941295199,
+  "elapsed_time_seconds": 907.8771419999975,
+  "cumulative_flops": 4366555315200000.0,
+  "cumulative_flops_active": 229818700800000.0,
+  "cumulative_flops_target": 4136736614400000.0,
+  "cumulative_pflops": 4.3665553152,
+  "cumulative_pflops_active": 0.2298187008,
+  "cumulative_pflops_target": 4.1367366144
+}

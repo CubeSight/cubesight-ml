@@ -1,0 +1,17 @@
+{
+  "step": 125600,
+  "samples": 643072000,
+  "stage": "f2l",
+  "num_syncs": 258,
+  "target_sample_counts": null,
+  "train_loss": 0.2238312079012394,
+  "best_loss": 0.2238312079012394,
+  "lr": 0.0005139230339908468,
+  "elapsed_time_seconds": 37522.81702050002,
+  "cumulative_flops": 2.91460053737472e+17,
+  "cumulative_flops_active": 1.5340002828288e+16,
+  "cumulative_flops_target": 2.76120050909184e+17,
+  "cumulative_pflops": 291.460053737472,
+  "cumulative_pflops_active": 15.340002828288,
+  "cumulative_pflops_target": 276.120050909184
+}

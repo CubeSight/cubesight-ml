@@ -1,0 +1,6 @@
+{
+  "master_seed": 42,
+  "model_seed": 42,
+  "data_seed": 420295,
+  "dataloader_seed": 420296
+}

@@ -1,0 +1,6 @@
+{
+  "macs_per_sample": 1994048.0,
+  "flops_per_sample": 3988096.0,
+  "total_params": 1998593,
+  "trainable_params": 1998593
+}
