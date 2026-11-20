@@ -121,8 +121,9 @@ def train_davi(
         logger.info("Warming up DAVI models, dataloader, and kernels...")
         active_model.train()
         for _ in range(warmup_steps):
-            parents_w, _ = next(data_iter)
+            parents_w, depths_w = next(data_iter)
             parents_w = parents_w.to(device, non_blocking=True)
+            depths_w = depths_w.to(device, non_blocking=True)
             with torch.no_grad():
                 _ = compute_davi_targets(
                     target_model,
@@ -130,6 +131,7 @@ def train_davi(
                     cube_ops,
                     goal_checker,
                     move_costs=move_costs_t,
+                    depths=depths_w,
                 )
                 _ = active_model(parents_w)["value"]
         logger.info("Warm-up complete.")
@@ -175,6 +177,7 @@ def train_davi(
                     cube_ops=cube_ops,
                     goal_checker=goal_checker,
                     move_costs=move_costs_t,
+                    depths=depths,
                 )
 
             # 2. Compute active model predictions

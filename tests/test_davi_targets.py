@@ -190,3 +190,27 @@ def test_davi_targets_aligns_children_to_parent_d_color():
         goal_checker=checker,
     )
     assert torch.isclose(targets[0], torch.tensor(1.0))
+
+
+def test_davi_targets_cayleypy_depth_clamping():
+    """Verify CayleyPy RL clamping d(s) <- min(k, max(0, d(s))) for walk depths k >= 0."""
+    ops = TorchCubeOps(use_double_moves=False, device="cpu")
+    checker = StageGoalChecker(CROSS_SPEC, device="cpu")
+    # Model overestimates value as 20.0 -> Bellman raw target = 21.0
+    model = DummyValueModel(constant_val=20.0)
+
+    parents = torch.randint(10, 20, size=(3, 40), dtype=torch.long)
+    # State 0: walk depth k=4 -> clamped to 4.0
+    # State 1: walk depth k=25 -> raw target 21.0 <= 25, stays 21.0
+    # State 2: precondition state k=-1 -> no upper clamp, stays 21.0
+    depths = torch.tensor([4, 25, -1], dtype=torch.int16)
+
+    targets = compute_davi_targets(
+        target_model=model,
+        parents=parents,
+        cube_ops=ops,
+        goal_checker=checker,
+        depths=depths,
+    )
+
+    assert torch.allclose(targets, torch.tensor([4.0, 21.0, 21.0]))

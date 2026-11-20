@@ -14,11 +14,13 @@ def compute_davi_targets(
     chunk_size: int = 100_000,
     clamp_min: float | None = 0.0,
     move_costs: torch.Tensor | None = None,
+    depths: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes DeepCubeA DAVI Bellman targets for a batch of parent states:
 
     y(s) = 0 if s is goal, else min_a [ c(a) + J_target(s') ]
-    where J_target(s') = 0 if s' is goal.
+    where J_target(s') = 0 if s' is goal, optionally clamped to [0, k]
+    (CayleyPy RL target clipping) when random-walk step depths k are provided.
 
     Args:
         target_model: ResMLP value model wrapper.
@@ -30,6 +32,10 @@ def compute_davi_targets(
         move_costs: Tensor of shape (A,) or (NUM_MOVES,) representing action
             execution costs c(a) = base_cost + penalty. If None, defaults to
             unit cost 1.0 for all actions.
+        depths: Optional Tensor (B,) of random-walk scramble depths k. States
+            with k >= 0 have their Bellman target clamped above by k
+            (d(s) <- min(k, max(0, d(s)))); states with k < 0 (e.g. precondition
+            samples) are not upper-clamped.
 
     Returns:
         Tensor (B,) containing Bellman cost-to-go targets.
@@ -85,6 +91,15 @@ def compute_davi_targets(
 
     if clamp_min is not None:
         targets = targets.clamp_min(clamp_min)
+
+    if depths is not None:
+        depths_dev = depths.to(device=targets.device)
+        valid_depth_mask = depths_dev >= 0
+        targets = torch.where(
+            valid_depth_mask,
+            torch.minimum(targets, depths_dev.to(dtype=targets.dtype)),
+            targets,
+        )
 
     # 6. Target Masking: if parent s is already in goal set, y(s) = 0.0
     is_goal_parents = goal_checker.is_goal(parents)

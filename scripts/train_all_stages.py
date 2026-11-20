@@ -76,7 +76,7 @@ CROSS_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": "first_pipeline",
+    "exp_name": "first_pipeline_clamping",
     "move_penalties": "presets/data_driven_penalties.json",
 }
 
@@ -125,7 +125,7 @@ F2L_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": "first_pipeline",
+    "exp_name": "first_pipeline_clamping",
     "move_penalties": "presets/data_driven_penalties.json",
 }
 
@@ -174,7 +174,7 @@ OLL_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": "first_pipeline",
+    "exp_name": "first_pipeline_clamping",
     "move_penalties": "presets/data_driven_penalties.json",
 }
 
@@ -223,7 +223,7 @@ PLL_CONFIG: dict[str, Any] = {
     "dataloader_seed": None,
     # Output & Ergonomic Move Penalties
     "output_dir": None,
-    "exp_name": "first_pipeline",
+    "exp_name": "first_pipeline_clamping",
     "move_penalties": "presets/data_driven_penalties.json",
 }
 
